@@ -13,7 +13,11 @@ async def lifespan(app: FastAPI):
     # Startup
     print("🚀 Starting University Knowledge API...")
     await connect_to_mongo()
-    # vectorizer.initialize()  # Temporarily disabled - initialize on first use
+
+    # Initialize LangChain Vector Store
+    from app.services.vector_store import vector_store_service
+    vector_store_service.initialize()
+
     print("✓ All services initialized")
     yield
     # Shutdown

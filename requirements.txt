@@ -9,6 +9,12 @@ pymongo>=4.10.1
 certifi>=2025.11.12
 pyopenssl>=25.3.0
 
+# LangChain - RAG Orchestration
+langchain==0.3.13
+langchain-community==0.3.13
+langchain-mongodb==0.2.0
+langchain-openai==0.2.14
+
 # Vector Search & Embeddings
 fastembed==0.3.6
 
@@ -21,6 +27,9 @@ python-docx==1.1.2
 pandas==2.2.3
 openpyxl==3.1.5
 python-magic-bin==0.4.14
+
+# Text Processing
+tiktoken==0.8.0
 
 # Utilities
 pydantic==2.10.6
