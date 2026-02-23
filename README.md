@@ -1,4 +1,4 @@
-# ragUni - University Knowledge Base with RAG
+# 🎓 ragUni - University Knowledge Base with RAG
 
 An intelligent question-answering system for universities, powered by **Retrieval-Augmented Generation (RAG)**. Upload institutional documents (schedules, syllabi, policies) and get accurate, source-cited answers in natural language.
 
@@ -9,17 +9,17 @@ An intelligent question-answering system for universities, powered by **Retrieva
 
 ---
 
-## The Problem
+## ❓ The Problem
 
 University students constantly struggle to find answers buried in dozens of PDFs, Word docs, and spreadsheets: *"When is the physics exam?"*, *"What's the schedule for session week?"*, *"Where do I find the thesis requirements?"*. Information is scattered, hard to search, and often in complex table formats.
 
-## The Solution
+## 💡 The Solution
 
 **ragUni** ingests university documents, splits them into semantic chunks, generates vector embeddings, and stores everything in MongoDB Atlas. When a student asks a question, the system performs a vector similarity search to find the most relevant passages, then feeds them as context to an LLM that generates a precise, source-cited answer.
 
 ---
 
-## Architecture
+## 🏗️ Architecture
 
 ```
                         ┌─────────────────────────────────────────────┐
@@ -62,19 +62,19 @@ University students constantly struggle to find answers buried in dozens of PDFs
 
 ---
 
-## Key Features
+## ✨ Key Features
 
-- **Multi-format ingestion** - Upload PDF, DOCX, and XLSX files via REST API
-- **Multilingual embeddings** - Uses `intfloat/multilingual-e5-large` (100+ languages, including Ukrainian) with local inference via FastEmbed
-- **Vector search** - MongoDB Atlas Vector Search with cosine similarity for fast, semantic retrieval
-- **RAG pipeline** - LangChain orchestration connecting retrieval to Deepseek LLM for answer generation
-- **Source attribution** - Every answer includes references to the exact document chunks it was derived from
-- **Async by design** - Built on FastAPI + Motor (async MongoDB driver) for high concurrency
-- **Auto-generated docs** - Swagger UI and ReDoc available out of the box
+- 📄 **Multi-format ingestion** — Upload PDF, DOCX, and XLSX files via REST API
+- 🌍 **Multilingual embeddings** — Uses `intfloat/multilingual-e5-large` (100+ languages, including Ukrainian) with local inference via FastEmbed
+- 🔍 **Vector search** — MongoDB Atlas Vector Search with cosine similarity for fast, semantic retrieval
+- 🤖 **RAG pipeline** — LangChain orchestration connecting retrieval to Deepseek LLM for answer generation
+- 📌 **Source attribution** — Every answer includes references to the exact document chunks it was derived from
+- ⚡ **Async by design** — Built on FastAPI + Motor (async MongoDB driver) for high concurrency
+- 📚 **Auto-generated docs** — Swagger UI and ReDoc available out of the box
 
 ---
 
-## Tech Stack
+## 🛠️ Tech Stack
 
 | Layer | Technology |
 |---|---|
@@ -88,7 +88,7 @@ University students constantly struggle to find answers buried in dozens of PDFs
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
 ### 1. Clone & install
 
@@ -126,7 +126,7 @@ The API is now live at `http://localhost:8000` with interactive docs at `/docs`.
 
 ---
 
-## API Reference
+## 📡 API Reference
 
 ### Documents
 
@@ -167,7 +167,7 @@ curl -X POST http://localhost:8000/api/v1/chat/ask \
 
 ---
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 ragUni/
@@ -195,7 +195,7 @@ ragUni/
 
 ---
 
-## Configuration
+## ⚙️ Configuration
 
 All settings are managed via environment variables (`.env`):
 
@@ -213,7 +213,7 @@ All settings are managed via environment variables (`.env`):
 
 ---
 
-## Performance
+## ⚡ Performance
 
 | Stage | Latency |
 |-------|---------|
