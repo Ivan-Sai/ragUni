@@ -10,9 +10,14 @@ ENV/
 *.egg-info/
 dist/
 build/
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Environment
 .env
+.env.local
+.env.*.local
 
 # IDE
 .vscode/
@@ -29,3 +34,17 @@ uploads/
 *.pdf
 *.docx
 *.xlsx
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Secrets
+*.key
+*.pem
+secrets/
+
+# Misc
+*.txt
+!requirements.txt
