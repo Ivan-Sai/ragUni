@@ -1,0 +1,217 @@
+{
+  "metadata": {
+    "title": "UniRAG — University Knowledge Base",
+    "description": "Intelligent RAG-based knowledge system for universities"
+  },
+  "auth": {
+    "login": {
+      "title": "Login",
+      "description": "Sign in to the university knowledge base",
+      "email": "Email",
+      "password": "Password",
+      "submit": "Sign in",
+      "noAccount": "Don't have an account?",
+      "register": "Register",
+      "invalidCredentials": "Invalid email or password",
+      "success": "Logged in successfully!",
+      "serverError": "Unable to connect to the server. Please try again later."
+    },
+    "register": {
+      "title": "Registration",
+      "description": "Create an account",
+      "email": "Email",
+      "password": "Password",
+      "fullName": "Full name",
+      "fullNamePlaceholder": "John Doe",
+      "role": "Role",
+      "roleStudent": "Student",
+      "roleTeacher": "Teacher",
+      "faculty": "Faculty",
+      "facultyPlaceholder": "Faculty of Computer Science",
+      "group": "Group",
+      "groupPlaceholder": "CS-41",
+      "year": "Year",
+      "yearPlaceholder": "4",
+      "department": "Department",
+      "departmentPlaceholder": "Department of Intelligent Systems",
+      "position": "Position",
+      "positionPlaceholder": "Associate Professor",
+      "submit": "Register",
+      "hasAccount": "Already have an account?",
+      "login": "Sign in",
+      "success": "Registration successful! Please sign in.",
+      "serverError": "Unable to connect to the server. Please try again later.",
+      "genericError": "Registration error"
+    },
+    "validation": {
+      "emailRequired": "Email is required",
+      "passwordRequired": "Password is required",
+      "fullNameRequired": "Full name is required",
+      "facultyRequired": "Faculty is required"
+    }
+  },
+  "chat": {
+    "input": {
+      "placeholder": "Enter your question...",
+      "ariaLabel": "Message for chat",
+      "sendAriaLabel": "Send message"
+    },
+    "messages": {
+      "emptyTitle": "University Assistant",
+      "emptyDescription": "Ask a question about the curriculum, documents, or any university topic.",
+      "loading": "Loading response",
+      "ariaLabel": "Chat messages",
+      "you": "You",
+      "assistant": "Assistant"
+    },
+    "history": {
+      "title": "Chat history",
+      "newChat": "New chat",
+      "empty": "No previous chats",
+      "untitled": "Untitled",
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "daysAgo": "d. ago"
+    },
+    "sources": {
+      "title": "Sources ({count})",
+      "chunk": "Part ",
+      "chunkOf": " of {total}"
+    },
+    "errors": {
+      "serverError": "Server error during response",
+      "sessionLoadError": "Error loading session",
+      "tooLong": "Question is too long. Maximum {limit} characters.",
+      "empty": "Question cannot be empty.",
+      "networkError": "Unable to connect to the server. Check your internet connection and try again.",
+      "unknownError": "Unknown error"
+    }
+  },
+  "admin": {
+    "dashboard": {
+      "title": "Admin Panel",
+      "description": "System overview and management",
+      "refresh": "Refresh"
+    },
+    "stats": {
+      "users": "Users",
+      "usersDescription": "Total count",
+      "pendingTeachers": "Pending Approval",
+      "pendingTeachersDescription": "Teachers",
+      "documents": "Documents",
+      "documentsDescription": "Uploaded",
+      "chunks": "Chunks",
+      "chunksDescription": "In vector store",
+      "loadError": "Error loading statistics"
+    },
+    "documents": {
+      "title": "Document Management",
+      "totalCount": "Total: {count} documents",
+      "refresh": "Refresh",
+      "file": "File",
+      "type": "Type",
+      "chunks": "Chunks",
+      "uploaded": "Uploaded",
+      "actions": "Actions",
+      "empty": "No documents found",
+      "deleteTitle": "Delete document?",
+      "deleteDescription": "Document \"{filename}\" and all its chunks will be deleted from the vector store. This action cannot be undone.",
+      "cancel": "Cancel",
+      "delete": "Delete"
+    },
+    "upload": {
+      "title": "Upload document",
+      "description": "Supported formats: PDF, DOCX, XLSX (up to 10 MB)",
+      "unsupportedFormat": "Unsupported format. Allowed: ",
+      "mimeMismatch": "File type does not match extension. Allowed: ",
+      "tooLarge": "File is too large. Maximum: 10 MB",
+      "dropzone": "Drag a file or click to select",
+      "uploading": "Uploading...",
+      "upload": "Upload",
+      "success": "Document uploaded",
+      "error": "Upload error",
+      "errorDescription": "Error uploading document"
+    },
+    "users": {
+      "title": "User Management",
+      "totalCount": "Total: {count} users",
+      "refresh": "Refresh",
+      "name": "Name",
+      "email": "Email",
+      "role": "Role",
+      "faculty": "Faculty",
+      "status": "Status",
+      "registrationDate": "Registration date",
+      "actions": "Actions",
+      "empty": "No users found",
+      "roleAdmin": "Admin",
+      "roleTeacher": "Teacher",
+      "roleStudent": "Student",
+      "active": "Active",
+      "blocked": "Blocked",
+      "notApproved": "Not approved",
+      "blockTitle": "Block user?",
+      "unblockTitle": "Unblock user?",
+      "blockDescription": "User {name} will not be able to sign in.",
+      "unblockDescription": "User {name} will regain access to the system.",
+      "cancel": "Cancel",
+      "block": "Block",
+      "unblock": "Unblock",
+      "loadMore": "Load more",
+      "loading": "Loading...",
+      "noFaculty": "—"
+    },
+    "pending": {
+      "title": "Pending Approval",
+      "description": "Teachers awaiting registration confirmation",
+      "empty": "No pending requests",
+      "approved": "Teacher approved",
+      "rejected": "Teacher rejected",
+      "userBlocked": "User blocked",
+      "userUnblocked": "User unblocked",
+      "roleChanged": "Role changed"
+    }
+  },
+  "layout": {
+    "sidebar": {
+      "navigation": "Navigation",
+      "chat": "Chat",
+      "admin": "Administration",
+      "adminPanel": "Panel",
+      "documents": "Documents",
+      "users": "Users"
+    },
+    "header": {
+      "logout": "Log out",
+      "login": "Sign in"
+    },
+    "themeToggle": "Toggle theme"
+  },
+  "errors": {
+    "global": {
+      "title": "Something went wrong",
+      "description": "An unexpected error occurred. Please try refreshing the page.",
+      "retry": "Try again"
+    },
+    "dashboard": {
+      "title": "Loading error",
+      "description": "Unable to load this page. Check your internet connection.",
+      "retry": "Try again"
+    },
+    "chat": {
+      "title": "Chat error",
+      "description": "Unable to load the chat. Please try refreshing the page or starting a new session.",
+      "retry": "Try again",
+      "newChat": "New chat"
+    },
+    "admin": {
+      "title": "Admin panel error",
+      "description": "Unable to load the admin panel. Make sure you have the appropriate permissions.",
+      "retry": "Try again"
+    }
+  },
+  "common": {
+    "unknownError": "Unknown error",
+    "kb": "KB"
+  }
+}
