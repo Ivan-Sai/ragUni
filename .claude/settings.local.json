@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(pip install:*)",
+      "Bash(pip uninstall:*)",
+      "Bash(uvicorn app.main:app:*)",
+      "Bash(python:*)",
+      "Bash(where:*)",
+      "Bash(findstr:*)",
+      "Bash(pip show:*)",
+      "Bash(venv/Scripts/python.exe:*)",
+      "Bash(xargs wc -l)",
+      "Bash(source venv/Scripts/activate)",
+      "Bash(\"C:\\\\Users\\\\vania\\\\AppData\\\\Local\\\\Python\\\\bin\\\\python.exe\" --version)",
+      "Bash(\"C:\\\\Users\\\\vania\\\\AppData\\\\Local\\\\Python\\\\bin\\\\python.exe\" -m venv venv)",
+      "Bash(venv/Scripts/pip.exe install -r requirements.txt)",
+      "Bash(venv/Scripts/pip.exe show pandas)",
+      "Bash(venv/Scripts/pip.exe install pydantic pydantic-settings)",
+      "Bash(venv/Scripts/pip.exe show pydantic pydantic-settings)",
+      "Bash(venv/Scripts/pip.exe show numpy)",
+      "Bash(venv/Scripts/pip.exe install fastapi uvicorn python-multipart motor pymongo certifi pyopenssl \"python-jose[cryptography]\" \"passlib[bcrypt]\" pytest pytest-asyncio httpx pytest-cov python-dotenv PyPDF2 python-docx openpyxl)",
+      "Bash(npm install next-auth@beta @auth/core)",
+      "Bash(npx shadcn@latest init -d --style default --base-color neutral)",
+      "Bash(npx shadcn@latest init -d)",
+      "Bash(venv/Scripts/pip show pydantic pydantic-settings)",
+      "Bash(venv/Scripts/pip index versions pydantic)",
+      "Bash(node -e \"console.log\\(require\\(''next/package.json''\\).version\\)\")",
+      "WebFetch(domain:dev.to)",
+      "Bash(curl -s -X POST \"http://localhost:8000/api/v1/auth/login\" -H \"Content-Type: application/x-www-form-urlencoded\" -d \"username=vaniasai05@gmail.com&password=testtest\")",
+      "Bash(find /d/ragUni/backend -name \"*.py\" -exec wc -l {} +)"
+    ],
+    "deny": [],
+    "ask": [],
+    "additionalDirectories": [
+      "\\tmp",
+      "C:\\Users\\vania\\.claude\\projects\\d--ragUni"
+    ]
+  }
+}
