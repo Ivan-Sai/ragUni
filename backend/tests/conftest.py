@@ -5,8 +5,14 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from bson import ObjectId
 
-# Set test env vars before anything imports config
+# Set test env vars before anything imports config.
+# SECRET_KEY is validated to be >=32 chars and not start with "change-me",
+# so we use a dedicated high-entropy value that is obviously a test key.
 os.environ.setdefault("DEEPSEEK_API_KEY", "test-key-for-testing")
+os.environ.setdefault(
+    "SECRET_KEY",
+    "test-secret-key-for-unit-tests-only-do-not-use-in-prod-0000",
+)
 
 
 @pytest.fixture

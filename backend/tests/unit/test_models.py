@@ -44,18 +44,18 @@ class TestUserModel:
         assert user.department == "Кафедра КІ"
         assert user.position == "Доцент"
 
-    def test_admin_creation_valid(self):
-        """Admin with minimal fields should be valid."""
+    def test_admin_role_rejected_in_registration(self):
+        """Admin role should be rejected in UserCreate (registration model)."""
         from app.models.user import UserCreate
 
-        user = UserCreate(
-            email="admin@knu.ua",
-            password="SecurePass123!",
-            full_name="Адмін Системи",
-            role="admin",
-            faculty="Загальний",
-        )
-        assert user.role == "admin"
+        with pytest.raises(ValueError):
+            UserCreate(
+                email="admin@knu.ua",
+                password="SecurePass123!",
+                full_name="Admin User",
+                role="admin",
+                faculty="CS",
+            )
 
     def test_invalid_role_rejected(self):
         """Invalid role should raise validation error."""

@@ -74,9 +74,13 @@ def mock_db_collections():
     chat_history.delete_one = AsyncMock()
 
     mock = MagicMock()
+    feedback = MagicMock()
+    feedback.delete_many = AsyncMock()
+
     mock.users = users
     mock.documents = documents
     mock.chat_history = chat_history
+    mock.feedback = feedback
 
     return mock
 

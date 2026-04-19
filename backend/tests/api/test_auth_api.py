@@ -85,6 +85,20 @@ class TestRegister:
         assert response.status_code == 409
 
     @pytest.mark.asyncio
+    async def test_register_admin_role_rejected(self, client, mock_db):
+        """Attempting to register with admin role returns 422."""
+        mock_db.users.find_one.return_value = None
+        admin_data = {
+            "email": "evil@knu.ua",
+            "password": "SecurePass123!",
+            "full_name": "Evil Admin",
+            "role": "admin",
+            "faculty": "CS",
+        }
+        response = await client.post("/api/v1/auth/register", json=admin_data)
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
     async def test_register_invalid_data_returns_422(self, client, mock_db):
         """Registration with invalid data returns 422."""
         response = await client.post("/api/v1/auth/register", json={"email": "bad"})
@@ -191,6 +205,50 @@ class TestRefreshToken:
             json={"refresh_token": access},
         )
         assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_refresh_blocks_deactivated_user(self, client, mock_db):
+        """A deactivated user must not be able to refresh their access token."""
+        from app.core.security import create_refresh_token
+
+        refresh = create_refresh_token(data={"sub": "blocked@knu.ua", "role": "student"})
+
+        mock_db.users.find_one.return_value = {
+            "_id": ObjectId("507f1f77bcf86cd799439013"),
+            "email": "blocked@knu.ua",
+            "role": "student",
+            "is_active": False,
+            "is_approved": True,
+        }
+
+        response = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": refresh},
+        )
+        assert response.status_code == 403
+        assert "deactivated" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_refresh_blocks_unapproved_teacher(self, client, mock_db):
+        """An unapproved teacher must not be able to refresh their access token."""
+        from app.core.security import create_refresh_token
+
+        refresh = create_refresh_token(data={"sub": "pending@knu.ua", "role": "teacher"})
+
+        mock_db.users.find_one.return_value = {
+            "_id": ObjectId("507f1f77bcf86cd799439014"),
+            "email": "pending@knu.ua",
+            "role": "teacher",
+            "is_active": True,
+            "is_approved": False,
+        }
+
+        response = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": refresh},
+        )
+        assert response.status_code == 403
+        assert "approval" in response.json()["detail"].lower()
 
 
 class TestGetMe:

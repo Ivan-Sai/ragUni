@@ -15,6 +15,8 @@ def chat_mock_db():
     mock.chat_history.insert_one = AsyncMock()
     mock.chat_history.update_one = AsyncMock()
     mock.chat_history.delete_one = AsyncMock()
+    mock.feedback = MagicMock()
+    mock.feedback.delete_many = AsyncMock()
     mock.documents = MagicMock()
     mock.documents.count_documents = AsyncMock(return_value=5)
     with patch("app.api.v1.chat_history.get_database", return_value=mock):
