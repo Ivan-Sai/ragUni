@@ -16,6 +16,8 @@ from pydantic import BaseModel
 from app.config import get_settings
 from app.core.dependencies import get_current_user
 from app.core.rate_limit import limiter
+from app.models.audit import AuditAction
+from app.services.audit_log import record_action as audit_record_action
 from app.services.database import get_database
 from app.services.input_sanitizer import input_sanitizer
 from app.services.vector_store import vector_store_service
@@ -318,4 +320,10 @@ async def delete_session(
     # Clean up associated feedback
     await db.feedback.delete_many({"session_id": session_id, "user_id": user_id})
 
+    await audit_record_action(
+        actor=current_user,
+        action=AuditAction.CHAT_SESSION_DELETED,
+        resource_type="chat_session",
+        resource_id=session_id,
+    )
     return {"message": "Session deleted"}
