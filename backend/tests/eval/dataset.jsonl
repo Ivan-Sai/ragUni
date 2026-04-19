@@ -1,0 +1,24 @@
+# ragUni evaluation dataset — JSONL.
+# Lines starting with "#" are comments and blank lines are skipped.
+#
+# Each record:
+#   question         - natural-language question (uk or en)
+#   relevant_chunks  - IDs of chunks that contain the answer
+#   gold_answer      - concise human reference answer, cites the source
+#   faculty          - faculty scope (null = university-wide)
+#   role             - role the question is asked under
+#   tags             - free-form labels: "factual", "temporal", "access", ...
+#
+# Target for defense: >= 50 entries covering every role and document type.
+# Chunk IDs refer to the `_id` of documents in the `embeddings` collection.
+
+{"question": "When is the midterm exam in Algorithms and Data Structures?", "relevant_chunks": ["TBD_chunk_1"], "gold_answer": "According to the spring-semester schedule, the Algorithms and Data Structures midterm is on 2026-03-15.", "faculty": "Computer Science", "role": "student", "tags": ["factual", "temporal"]}
+{"question": "What is the minimum GPA required to keep a state-funded place?", "relevant_chunks": ["TBD_chunk_2"], "gold_answer": "According to the regulations document, a student must maintain an average grade of at least 4.0 on the five-point scale to keep the state-funded place.", "faculty": null, "role": "student", "tags": ["factual", "policy"]}
+{"question": "Які вимоги до структури дипломної роботи бакалавра?", "relevant_chunks": ["TBD_chunk_3"], "gold_answer": "Згідно з методичними рекомендаціями, дипломна робота має містити вступ, 3 розділи, висновки, список літератури та додатки, загальний обсяг 60-80 сторінок.", "faculty": "Computer Science", "role": "student", "tags": ["factual", "uk"]}
+{"question": "Скільки кредитів ECTS потрібно для отримання ступеня магістра?", "relevant_chunks": ["TBD_chunk_4"], "gold_answer": "Для здобуття ступеня магістра потрібно накопичити 120 кредитів ECTS за два академічні роки.", "faculty": null, "role": "student", "tags": ["factual", "uk"]}
+{"question": "What is the procedure for approving a teacher account?", "relevant_chunks": ["TBD_chunk_5"], "gold_answer": "A teacher registers through the standard form, the account is marked is_approved=false, and an administrator reviews and approves it from the admin panel.", "faculty": null, "role": "admin", "tags": ["workflow", "role:admin"]}
+{"question": "How many attempts are allowed to pass a failed final exam?", "relevant_chunks": ["TBD_chunk_6"], "gold_answer": "Per the academic regulations, a student has up to two re-attempts: one within the regular retake period and one before an examination commission.", "faculty": null, "role": "student", "tags": ["factual", "policy"]}
+{"question": "What is the tuition fee for a contract-based student in 2025/26?", "relevant_chunks": ["TBD_chunk_7"], "gold_answer": "Tuition fees for 2025/26 are listed per specialty in the finance department document; the Computer Science contract fee is 45,000 UAH per academic year.", "faculty": null, "role": "student", "tags": ["factual", "financial"]}
+{"question": "Які права має куратор групи?", "relevant_chunks": ["TBD_chunk_8"], "gold_answer": "Куратор групи має право отримувати успішність своєї групи, рекомендувати стипендії та брати участь у засіданні щодо відрахування студентів.", "faculty": null, "role": "teacher", "tags": ["policy", "role:teacher", "uk"]}
+{"question": "When does the winter session start this academic year?", "relevant_chunks": ["TBD_chunk_9"], "gold_answer": "The winter session starts on 2026-01-12 and runs until 2026-01-26 according to the academic calendar.", "faculty": null, "role": "student", "tags": ["factual", "temporal"]}
+{"question": "Where is the library located?", "relevant_chunks": [], "gold_answer": "The available documents do not contain information about the library location.", "faculty": null, "role": "student", "tags": ["refusal", "out-of-scope"]}
