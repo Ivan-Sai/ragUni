@@ -4,6 +4,14 @@ import type {
   UserResponse,
   RegisterData,
   LoginData,
+  ChangePasswordData,
+  ForgotPasswordData,
+  ResetPasswordData,
+  ProfileUpdateData,
+  MessageResponse,
+  FeedbackData,
+  FeedbackResponse,
+  FeedbackStats,
   ChatSession,
   ChatSessionPreview,
   AskRequest,
@@ -16,10 +24,7 @@ import type {
   SystemHealth,
   UserRole,
 } from "@/types/api";
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-const API_PREFIX = "/api/v1";
+import { API_BASE_URL, API_PREFIX } from "@/lib/env";
 
 class ApiError extends Error {
   status: number;
@@ -72,6 +77,21 @@ async function request<T>(
   const response = await fetch(url, config);
 
   if (!response.ok) {
+    // If an authenticated request comes back 401 the token is no longer
+    // valid (expired, revoked, or signed with a different secret). The
+    // session is dead — sign the user out so the UI falls back to the
+    // login screen instead of rendering half-broken pages. Skipped on
+    // the server and for unauthenticated calls so the login form can
+    // still surface "wrong password" errors as 401.
+    if (
+      response.status === 401 &&
+      Boolean(options?.token) &&
+      typeof window !== "undefined"
+    ) {
+      const { signOut } = await import("next-auth/react");
+      await signOut({ callbackUrl: "/login" });
+    }
+
     let detail = "Server error";
     try {
       const errorData = await response.json();
@@ -141,6 +161,28 @@ export const authApi = {
   async getMe(token: string): Promise<UserResponse> {
     return apiClient.get<UserResponse>("/auth/me", { token });
   },
+
+  async changePassword(
+    data: ChangePasswordData,
+    token: string
+  ): Promise<MessageResponse> {
+    return apiClient.put<MessageResponse>("/auth/password", data, { token });
+  },
+
+  async forgotPassword(data: ForgotPasswordData): Promise<MessageResponse> {
+    return apiClient.post<MessageResponse>("/auth/forgot-password", data);
+  },
+
+  async resetPassword(data: ResetPasswordData): Promise<MessageResponse> {
+    return apiClient.post<MessageResponse>("/auth/reset-password", data);
+  },
+
+  async updateProfile(
+    data: ProfileUpdateData,
+    token: string
+  ): Promise<UserResponse> {
+    return apiClient.put<UserResponse>("/auth/profile", data, { token });
+  },
 };
 
 export const chatApi = {
@@ -159,6 +201,13 @@ export const chatApi = {
     return apiClient.delete<{ message: string }>(`/chat/history/${sessionId}`, {
       token,
     });
+  },
+
+  async submitFeedback(
+    data: FeedbackData,
+    token: string
+  ): Promise<FeedbackResponse> {
+    return apiClient.post<FeedbackResponse>("/chat/feedback", data, { token });
   },
 
   async askQuestion(data: AskRequest, token: string): Promise<Response> {
@@ -253,6 +302,15 @@ export const adminApi = {
       { token }
     );
   },
+
+  async getFeedbackStats(token: string): Promise<FeedbackStats> {
+    return apiClient.get<FeedbackStats>("/chat/feedback/stats", { token });
+  },
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async getAnalytics(token: string, days = 30): Promise<any> {
+    return apiClient.get(`/admin/analytics?days=${days}`, { token });
+  },
 };
 
 export const documentsApi = {
@@ -301,6 +359,11 @@ export const documentsApi = {
     }
 
     return response.json();
+  },
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async getPreview(documentId: string, token: string): Promise<any> {
+    return apiClient.get(`/documents/${documentId}/preview`, { token });
   },
 
   async getStats(token: string): Promise<DocumentStats> {

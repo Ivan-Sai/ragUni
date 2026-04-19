@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import type { NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { authApi } from "@/lib/api";
+import { API_BASE_URL, API_PREFIX } from "@/lib/env";
 
 declare module "next-auth" {
   interface Session {
@@ -102,7 +103,7 @@ export const authOptions: NextAuthConfig = {
       // Access token expired — try to refresh
       try {
         const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/v1/auth/refresh`,
+          `${API_BASE_URL}${API_PREFIX}/auth/refresh`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
