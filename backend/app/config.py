@@ -63,6 +63,31 @@ class Settings(BaseSettings):
     llm_max_tokens: int = Field(default=1000, ge=1, le=8000)
     llm_timeout_seconds: int = Field(default=30, gt=0, le=120)
 
+    # Observability
+    environment: str = Field(default="development")
+    log_format: str = Field(default="text", description="text | json")
+    log_level: str = Field(default="INFO")
+    sentry_dsn: Optional[str] = None
+    sentry_traces_sample_rate: float = Field(default=0.1, ge=0.0, le=1.0)
+    release: Optional[str] = None
+    enable_metrics: bool = Field(
+        default=False,
+        description="When True, mount a /metrics Prometheus endpoint",
+    )
+
+    # Password reset
+    password_reset_expire_minutes: int = Field(default=15, gt=0, le=60)
+
+    # Email (Gmail SMTP)
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_email: Optional[str] = None
+    smtp_password: Optional[str] = None
+    frontend_url: str = "http://localhost:3000"
+
+    # Conversation context
+    max_conversation_messages: int = Field(default=10, ge=2, le=30)
+
     model_config = ConfigDict(env_file=_env_file, case_sensitive=False, extra="ignore")
 
     @field_validator('secret_key')

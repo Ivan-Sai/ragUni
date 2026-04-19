@@ -7,12 +7,26 @@ from starlette.responses import Response
 from contextlib import asynccontextmanager
 from pymongo.errors import ConnectionFailure
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
+from app.config import get_settings
+from app.core.logging_config import configure_logging
+from app.core.middleware import RequestIdMiddleware
+from app.core.observability import init_prometheus, init_sentry
+
+_settings = get_settings()
+configure_logging(
+    log_format=_settings.log_format,
+    level=getattr(logging, _settings.log_level.upper(), logging.INFO),
 )
+
+# Sentry must be initialised before any router imports so unhandled
+# exceptions at import time are also captured.
+init_sentry(
+    dsn=_settings.sentry_dsn,
+    environment=_settings.environment,
+    release=_settings.release,
+    traces_sample_rate=_settings.sentry_traces_sample_rate,
+)
+
 logger = logging.getLogger(__name__)
 
 from app.core.rate_limit import limiter, rate_limit_exceeded_handler, register_rate_limiter
@@ -22,6 +36,7 @@ from app.api.v1 import documents, chat
 from app.api.v1 import auth as auth_router_module
 from app.api.v1 import admin as admin_router_module
 from app.api.v1 import chat_history as chat_history_module
+from app.api.v1 import feedback as feedback_module
 
 
 @asynccontextmanager
@@ -79,6 +94,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 
+# Request id + access log. Installed AFTER the security-headers
+# middleware so the request-id response header survives CORS
+# preflights too. Starlette adds middlewares in reverse order of
+# registration, so this runs first on the way in.
+app.add_middleware(RequestIdMiddleware)
+
 # CORS middleware
 from app.core.security import CORS_ORIGINS
 app.add_middleware(
@@ -86,8 +107,12 @@ app.add_middleware(
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "X-Session-Id"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Session-Id", "X-Request-ID"],
+    expose_headers=["X-Request-ID"],
 )
+
+# Prometheus /metrics — off by default, enabled via ENABLE_METRICS=true.
+init_prometheus(app, enabled=_settings.enable_metrics)
 
 # Include routers
 app.include_router(
@@ -118,6 +143,12 @@ app.include_router(
     chat_history_module.router,
     prefix="/api/v1/chat",
     tags=["Chat History"]
+)
+
+app.include_router(
+    feedback_module.router,
+    prefix="/api/v1/chat",
+    tags=["Feedback"]
 )
 
 
