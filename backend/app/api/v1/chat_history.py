@@ -3,11 +3,12 @@
 import asyncio
 import json
 import logging
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from langchain_core.output_parsers import StrOutputParser
 from pydantic import BaseModel
@@ -16,12 +17,15 @@ from app.config import get_settings
 from app.core.dependencies import get_current_user
 from app.core.rate_limit import limiter
 from app.services.database import get_database
+from app.services.input_sanitizer import input_sanitizer
 from app.services.vector_store import vector_store_service
 from app.api.v1.chat import (
     format_docs,
+    format_chat_history,
     extract_sources,
     get_llm,
     rag_prompt,
+    rag_prompt_with_history,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,8 +45,19 @@ async def generate_rag_stream(
 ) -> AsyncGenerator[dict, None]:
     """Stream RAG response as SSE events with real pipeline."""
     db = get_database()
+    start_time = time.time()
 
     try:
+        # Prompt injection check
+        is_injection, pattern = input_sanitizer.detect_injection(question)
+        if is_injection:
+            yield {
+                "event": "error",
+                "data": "Ваше питання містить неприпустимі інструкції",
+            }
+            return
+        question = input_sanitizer.sanitize(question)
+
         # Build access filter
         user_role = user.get("role", "student")
         user_faculty = user.get("faculty")
@@ -51,7 +66,7 @@ async def generate_rag_stream(
         # Check documents exist
         doc_count = await db.documents.count_documents({})
         if doc_count == 0:
-            yield {"event": "token", "data": "The knowledge base has no documents yet."}
+            yield {"event": "token", "data": "В базі знань поки немає документів."}
             yield {"event": "done", "data": ""}
             return
 
@@ -86,7 +101,7 @@ async def generate_rag_stream(
                 timeout=float(settings.llm_timeout_seconds),
             )
         except asyncio.TimeoutError:
-            yield {"event": "error", "data": "Search took too long"}
+            yield {"event": "error", "data": "Пошук зайняв занадто багато часу"}
             return
 
         context = format_docs(docs)
@@ -99,13 +114,32 @@ async def generate_rag_stream(
         if sources:
             yield {"event": "sources", "data": sources}
 
-        # Build LCEL chain for streaming
+        # Load conversation history for multi-turn context
+        existing_session = await db.chat_history.find_one(
+            {"session_id": session_id, "user_id": str(user["_id"])},
+            {"messages": {"$slice": -settings.max_conversation_messages}},
+        )
+        prior_messages = existing_session["messages"] if existing_session else []
+
+        # Build LCEL chain — use history-aware prompt when prior messages exist
         llm = await get_llm()
-        chain = rag_prompt | llm | StrOutputParser()
+        if prior_messages:
+            history_text = format_chat_history(
+                prior_messages, settings.max_conversation_messages
+            )
+            chain = rag_prompt_with_history | llm | StrOutputParser()
+            chain_input = {
+                "chat_history": history_text,
+                "context": context,
+                "question": question,
+            }
+        else:
+            chain = rag_prompt | llm | StrOutputParser()
+            chain_input = {"context": context, "question": question}
 
         # Stream tokens
         full_answer = ""
-        async for chunk in chain.astream({"context": context, "question": question}):
+        async for chunk in chain.astream(chain_input):
             full_answer += chunk
             yield {"event": "token", "data": chunk}
 
@@ -151,17 +185,26 @@ async def generate_rag_stream(
                 }
             )
 
+        # Track analytics
+        from app.services.analytics import track_event
+        await track_event(
+            "chat_query",
+            user_id,
+            user.get("role", "student"),
+            {"response_time": round(time.time() - start_time, 2), "question_length": len(question)},
+        )
+
         yield {"event": "done", "data": ""}
 
     except asyncio.TimeoutError:
         logger.error("SSE stream timed out")
-        yield {"event": "error", "data": "Response timeout exceeded"}
+        yield {"event": "error", "data": "Час очікування відповіді вичерпано"}
     except RuntimeError as e:
         logger.error("SSE stream runtime error: %s", e, exc_info=True)
-        yield {"event": "error", "data": "Error processing request"}
+        yield {"event": "error", "data": "Помилка при обробці запиту"}
     except HTTPException as e:
         logger.error("SSE stream HTTP error: %s", e.detail)
-        yield {"event": "error", "data": "Error processing request"}
+        yield {"event": "error", "data": "Помилка при обробці запиту"}
 
 
 async def sse_event_generator(events: AsyncGenerator) -> AsyncGenerator[str, None]:
@@ -185,8 +228,13 @@ async def ask_question_stream(
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
-    if len(question) > 5000:
-        raise HTTPException(status_code=400, detail="Question too long. Maximum 5000 characters")
+    is_injection, _pattern = input_sanitizer.detect_injection(question)
+    if is_injection:
+        raise HTTPException(
+            status_code=400,
+            detail="Ваше питання містить неприпустимі інструкції",
+        )
+    question = input_sanitizer.sanitize(question)
 
     session_id = body.session_id or str(uuid.uuid4())
     logger.info("SSE question (session %s, role=%s)", session_id, current_user.get("role"))
@@ -207,8 +255,8 @@ async def ask_question_stream(
 @limiter.limit("30/minute")
 async def get_history(
     request: Request,
-    skip: int = 0,
-    limit: int = 50,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
     """List user's chat sessions."""
@@ -266,4 +314,8 @@ async def delete_session(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Session not found",
         )
+
+    # Clean up associated feedback
+    await db.feedback.delete_many({"session_id": session_id, "user_id": user_id})
+
     return {"message": "Session deleted"}
