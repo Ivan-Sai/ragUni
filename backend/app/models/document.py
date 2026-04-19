@@ -72,6 +72,7 @@ class ChatRequest(BaseModel):
     """Request model for chat endpoint"""
 
     question: str = Field(..., min_length=1, max_length=5000)
+    session_id: Optional[str] = None
     max_tokens: int = Field(default=1000, ge=1, le=4000)
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
 

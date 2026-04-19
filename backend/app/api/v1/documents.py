@@ -40,10 +40,12 @@ ALLOWED_MIMES = {
     "docx": [
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "application/octet-stream",
+        "application/zip",
     ],
     "xlsx": [
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "application/octet-stream",
+        "application/zip",
     ],
     "txt": ["text/plain"],
 }
@@ -160,7 +162,7 @@ async def upload_document(
 
         logger.info("Created %d chunks with embeddings", len(chunk_ids))
 
-        # Save document record to MongoDB
+        # Save document record to MongoDB (including extracted text for preview)
         db = get_database()
         document_data = {
             "filename": file.filename,
@@ -172,12 +174,22 @@ async def upload_document(
             "total_chunks": len(chunk_ids),
             "chunk_ids": chunk_ids,
             "metadata": chunk_metadata,
+            "extracted_text": text,
         }
 
         result = await db.documents.insert_one(document_data)
         document_id = str(result.inserted_id)
 
         logger.info("Document saved: %s (id=%s)", file.filename, document_id)
+
+        # Track upload event
+        from app.services.analytics import track_event
+        await track_event(
+            "document_upload",
+            str(current_user["_id"]),
+            current_user.get("role", "admin"),
+            {"filename": file.filename, "file_type": file_extension, "chunks": len(chunk_ids)},
+        )
 
         return DocumentResponse(
             id=document_id,
@@ -317,6 +329,54 @@ async def delete_document(
     except RuntimeError as e:
         logger.error("Error deleting document: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/{document_id}/preview")
+async def preview_document(
+    document_id: str,
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Get the extracted text of a document for preview."""
+    db = get_database()
+
+    try:
+        oid = ObjectId(document_id)
+    except (InvalidId, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid document identifier")
+
+    doc = await db.documents.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Access control
+    user_role = current_user.get("role", "student")
+    user_faculty = current_user.get("faculty")
+    access_level = doc.get("access_level", "public")
+    doc_faculty = doc.get("faculty")
+
+    if user_role == "student":
+        if access_level == "restricted":
+            raise HTTPException(status_code=403, detail="Access denied")
+        if access_level == "faculty" and doc_faculty != user_faculty:
+            raise HTTPException(status_code=403, detail="Access denied")
+    elif user_role == "teacher":
+        if access_level == "faculty" and doc_faculty != user_faculty:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+    extracted_text = doc.get("extracted_text")
+    if not extracted_text:
+        raise HTTPException(
+            status_code=404,
+            detail="Preview not available for this document",
+        )
+
+    return {
+        "id": str(doc["_id"]),
+        "filename": doc.get("filename"),
+        "file_type": doc.get("file_type"),
+        "total_chunks": doc.get("total_chunks", 0),
+        "text": extracted_text,
+    }
 
 
 @router.get("/stats")

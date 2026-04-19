@@ -61,6 +61,17 @@ async def create_database_indexes():
         # User indexes
         await db.db.users.create_index([("email", 1)], unique=True)
 
+        # Analytics indexes
+        await db.db.analytics_events.create_index([("timestamp", -1)])
+        await db.db.analytics_events.create_index([("event_type", 1), ("timestamp", -1)])
+
+        # Feedback indexes
+        await db.db.feedback.create_index(
+            [("user_id", 1), ("session_id", 1), ("message_index", 1)],
+            unique=True,
+        )
+        await db.db.feedback.create_index([("created_at", -1)])
+
         logger.info("Database indexes created")
 
     except OperationFailure as e:
