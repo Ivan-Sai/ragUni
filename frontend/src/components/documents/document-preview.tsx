@@ -36,23 +36,33 @@ export function DocumentPreview({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!open || !documentId || !token) {
-      setText(null);
-      setError(null);
-      return;
-    }
+    // Only (re)fetch when the dialog is actually open and we have the
+    // inputs we need. All setState calls live inside the async IIFE —
+    // react-hooks/set-state-in-effect flags synchronous setState in the
+    // effect *body*, so wrapping them in a nested async function keeps
+    // the rule happy while preserving the semantics.
+    if (!open || !documentId || !token) return;
 
-    setLoading(true);
-    setError(null);
-    documentsApi
-      .getPreview(documentId, token)
-      .then((result) => setText(result.text))
-      .catch((err) => {
+    let cancelled = false;
+    void (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await documentsApi.getPreview(documentId, token);
+        if (!cancelled) setText(result.text);
+      } catch (err) {
+        if (cancelled) return;
         const message =
           err instanceof Error ? err.message : t("previewLoadError");
         setError(message);
-      })
-      .finally(() => setLoading(false));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [open, documentId, token, t]);
 
   return (

@@ -52,7 +52,7 @@ describe("LoginForm", () => {
 
   it("calls signIn with credentials on submit", async () => {
     const user = userEvent.setup();
-    mockSignIn.mockResolvedValueOnce({ ok: true, error: undefined } as any);
+    mockSignIn.mockResolvedValueOnce({ ok: true, error: undefined });
 
     render(<LoginForm />);
 
@@ -91,7 +91,7 @@ describe("LoginForm", () => {
     mockSignIn.mockResolvedValueOnce({
       ok: false,
       error: "CredentialsSignin",
-    } as any);
+    });
 
     render(<LoginForm />);
 

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock next-auth to prevent initialization issues in test env
 vi.mock("next-auth", () => ({
-  default: (config: any) => ({
+  default: (_config: unknown) => ({
     handlers: { GET: vi.fn(), POST: vi.fn() },
     signIn: vi.fn(),
     signOut: vi.fn(),
@@ -46,9 +46,17 @@ describe("authOptions", () => {
 });
 
 describe("credentials authorize", () => {
-  function getAuthorize() {
-    const credentialsProvider = authOptions.providers[0] as any;
-    return credentialsProvider.options?.authorize || credentialsProvider.authorize;
+  type AuthorizeFn = (creds: Record<string, string>) => Promise<unknown>;
+  type CredentialsProvider = {
+    authorize?: AuthorizeFn;
+    options?: { authorize?: AuthorizeFn };
+  };
+
+  function getAuthorize(): AuthorizeFn {
+    const credentialsProvider = authOptions.providers[0] as unknown as CredentialsProvider;
+    const fn = credentialsProvider.options?.authorize ?? credentialsProvider.authorize;
+    if (!fn) throw new Error("Credentials provider has no authorize()");
+    return fn;
   }
 
   it("returns user data on successful login", async () => {
@@ -111,11 +119,17 @@ describe("credentials authorize", () => {
 });
 
 describe("jwt callback", () => {
+  // The full jwt callback parameter type pulls in deep next-auth
+  // internals that the test does not care about. Use a loose
+  // "parameter bag" alias + `unknown` cast so the call is type-safe at
+  // the boundary without leaking `any` into the file.
+  type JwtParams = Parameters<NonNullable<typeof authOptions.callbacks>["jwt"]>[0];
+
   it("stores user data in token on initial sign-in", async () => {
     const jwtCallback = authOptions.callbacks?.jwt;
     expect(jwtCallback).toBeDefined();
 
-    const result = await jwtCallback!({
+    const params = {
       token: { sub: "user-1" },
       user: {
         id: "user-1",
@@ -125,11 +139,13 @@ describe("jwt callback", () => {
         faculty: "CS",
         accessToken: "access-123",
         refreshToken: "refresh-456",
-      } as any,
+      },
       trigger: "signIn",
       account: null,
       session: undefined,
-    } as any);
+    } as unknown as JwtParams;
+
+    const result = await jwtCallback!(params);
 
     expect(result.role).toBe("student");
     expect(result.faculty).toBe("CS");
@@ -148,13 +164,15 @@ describe("jwt callback", () => {
       refreshToken: "existing-refresh",
     };
 
-    const result = await jwtCallback!({
+    const params = {
       token: existingToken,
-      user: undefined as any,
+      user: undefined,
       trigger: "update",
       account: null,
       session: undefined,
-    } as any);
+    } as unknown as JwtParams;
+
+    const result = await jwtCallback!(params);
 
     expect(result.role).toBe("teacher");
     expect(result.accessToken).toBe("existing-access");
@@ -162,11 +180,15 @@ describe("jwt callback", () => {
 });
 
 describe("session callback", () => {
+  type SessionParams = Parameters<
+    NonNullable<typeof authOptions.callbacks>["session"]
+  >[0];
+
   it("exposes user data from token to session", async () => {
     const sessionCallback = authOptions.callbacks?.session;
     expect(sessionCallback).toBeDefined();
 
-    const result = await sessionCallback!({
+    const params = {
       session: {
         user: { name: "", email: "", image: "" },
         expires: "2025-01-01",
@@ -179,7 +201,9 @@ describe("session callback", () => {
         faculty: "IT",
         accessToken: "token-abc",
       },
-    } as any);
+    } as unknown as SessionParams;
+
+    const result = await sessionCallback!(params);
 
     expect(result.user.id).toBe("user-1");
     expect(result.user.role).toBe("admin");

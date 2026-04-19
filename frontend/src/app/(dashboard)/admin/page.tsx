@@ -13,6 +13,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function AdminDashboardPage() {
   const { data: session, status } = useSession();
+  const t = useTranslations("admin.dashboard");
+  const token = session?.accessToken || "";
+
+  const { stats, isLoading: statsLoading, refresh: refreshStats } =
+    useAdminStats({ token });
+  const {
+    pendingTeachers,
+    isLoading: usersLoading,
+    approveTeacher,
+    rejectTeacher,
+  } = useAdminUsers({ token });
 
   if (status === "unauthenticated") {
     redirect("/login");
@@ -34,18 +45,6 @@ export default function AdminDashboardPage() {
   if (session?.user?.role !== "admin") {
     redirect("/chat");
   }
-
-  const t = useTranslations("admin.dashboard");
-  const token = session?.accessToken || "";
-
-  const { stats, isLoading: statsLoading, refresh: refreshStats } =
-    useAdminStats({ token });
-  const {
-    pendingTeachers,
-    isLoading: usersLoading,
-    approveTeacher,
-    rejectTeacher,
-  } = useAdminUsers({ token });
 
   const totalChunks =
     stats.documentStats?.vector_store?.total_chunks ?? 0;

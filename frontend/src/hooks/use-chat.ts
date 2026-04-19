@@ -99,8 +99,14 @@ export function useChat({ token, sessionId: initialSessionId = null }: UseChatOp
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
 
+  // Mirror sessionId into a ref so stable callbacks below can read the
+  // latest value without being re-created on every id change. Updating
+  // the ref from an effect (not inline in render) satisfies React 19's
+  // rules-of-refs lint: refs must only be mutated outside render.
   const sessionIdRef = useRef(sessionId);
-  sessionIdRef.current = sessionId;
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
