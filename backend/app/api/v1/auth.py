@@ -167,6 +167,20 @@ async def refresh_token(request: Request, body: RefreshRequest):
             detail="User not found",
         )
 
+    # Block refresh for deactivated or unapproved accounts —
+    # mirrors the check in get_current_user so revoked users cannot
+    # keep minting access tokens from a stolen / stale refresh token.
+    if not user.get("is_active", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account deactivated",
+        )
+    if not user.get("is_approved", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account pending administrator approval",
+        )
+
     token_data = {"sub": user["email"], "role": user["role"]}
     return AccessTokenResponse(
         access_token=create_access_token(data=token_data),
