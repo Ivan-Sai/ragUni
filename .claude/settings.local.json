@@ -28,7 +28,12 @@
       "Bash(node -e \"console.log\\(require\\(''next/package.json''\\).version\\)\")",
       "WebFetch(domain:dev.to)",
       "Bash(curl -s -X POST \"http://localhost:8000/api/v1/auth/login\" -H \"Content-Type: application/x-www-form-urlencoded\" -d \"username=vaniasai05@gmail.com&password=testtest\")",
-      "Bash(find /d/ragUni/backend -name \"*.py\" -exec wc -l {} +)"
+      "Bash(find /d/ragUni/backend -name \"*.py\" -exec wc -l {} +)",
+      "Bash(xargs grep *)",
+      "Bash(curl -sf http://127.0.0.1:8000/health)",
+      "Bash(curl -sf http://127.0.0.1:3000 -o /dev/null -w \"\\\\nfrontend HTTP %{http_code}\\\\n\")",
+      "Bash(curl -s http://127.0.0.1:3000 -o /dev/null -w \"%{http_code}\\\\n\")",
+      "Bash(curl -s http://127.0.0.1:3001 -o /dev/null -w \"%{http_code}\\\\n\")"
     ],
     "deny": [],
     "ask": [],

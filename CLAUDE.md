@@ -42,8 +42,6 @@ ragUni/
 ```
 
 ## Development Workflow
-- **TDD is mandatory** — see .claude/skills/tdd.md
-- Write a failing test FIRST, then implement
 - Run `cd backend && pytest -v` to verify
 - Mocks only for external dependencies (MongoDB, Deepseek API, FastEmbed)
 

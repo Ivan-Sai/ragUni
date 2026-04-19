@@ -48,3 +48,6 @@ secrets/
 # Misc
 *.txt
 !requirements.txt
+
+# Git worktrees
+.claude/worktrees/

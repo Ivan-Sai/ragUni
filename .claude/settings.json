@@ -113,7 +113,18 @@
       "Read(//c/Users/vania/**)",
       "Bash(find backend/tests -type f -name *.py)",
       "Bash(find frontend/src -type f -name *.ts -o -name *.tsx)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(ls -la \"c:/Users/vania/ragUni/frontend/src/app/\\(dashboard\\)/chat/\")",
+      "Bash(source .venv/Scripts/activate)",
+      "Bash(taskkill //F //FI 'WINDOWTITLE eq *uvicorn*')",
+      "Bash(taskkill //F //FI 'IMAGENAME eq python.exe' //FI 'WINDOWTITLE eq *uvicorn*')",
+      "Bash(lsof -ti:8000)",
+      "Bash(xargs kill:*)",
+      "Read(//c/Users/vania/ragUni/**)",
+      "Bash(taskkill //F //FI 'IMAGENAME eq node.exe')",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/docs)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/login)",
+      "WebFetch(domain:gist.github.com)"
     ],
     "additionalDirectories": [
       "d:\\ragUni\\frontend\\src\\app\\(dashboard)\\chat",
