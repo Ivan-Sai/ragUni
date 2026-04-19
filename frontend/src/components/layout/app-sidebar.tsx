@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
-import { MessageSquare, FileText, Users, LayoutDashboard } from "lucide-react";
+import { MessageSquare, FileText, Users, LayoutDashboard, User, BarChart3 } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -29,12 +29,14 @@ export function AppSidebar({ activeSessionId = null }: AppSidebarProps) {
 
   const userNavItems = [
     { title: t("chat"), href: "/chat", icon: MessageSquare },
+    { title: t("profile"), href: "/profile", icon: User },
   ];
 
   const adminNavItems = [
     { title: t("adminPanel"), href: "/admin", icon: LayoutDashboard },
     { title: t("documents"), href: "/admin/documents", icon: FileText },
     { title: t("users"), href: "/admin/users", icon: Users },
+    { title: t("analytics"), href: "/admin/analytics", icon: BarChart3 },
   ];
   const isAdmin = session?.user?.role === "admin";
   const token = session?.accessToken || "";

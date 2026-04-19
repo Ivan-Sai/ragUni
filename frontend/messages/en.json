@@ -12,6 +12,7 @@
       "submit": "Sign in",
       "noAccount": "Don't have an account?",
       "register": "Register",
+      "forgotPassword": "Forgot password?",
       "invalidCredentials": "Invalid email or password",
       "success": "Logged in successfully!",
       "serverError": "Unable to connect to the server. Please try again later."
@@ -45,9 +46,52 @@
     },
     "validation": {
       "emailRequired": "Email is required",
+      "emailInvalid": "Invalid email format",
       "passwordRequired": "Password is required",
+      "passwordMinLength": "Password must be at least 8 characters",
       "fullNameRequired": "Full name is required",
-      "facultyRequired": "Faculty is required"
+      "facultyRequired": "Faculty is required",
+      "currentPasswordRequired": "Current password is required",
+      "confirmPasswordRequired": "Password confirmation is required",
+      "passwordsDoNotMatch": "Passwords do not match",
+      "passwordUppercase": "Password must contain at least one uppercase letter",
+      "passwordLowercase": "Password must contain at least one lowercase letter",
+      "passwordDigit": "Password must contain at least one digit"
+    },
+    "forgotPassword": {
+      "title": "Reset Password",
+      "description": "Enter your email to receive a password reset link",
+      "email": "Email",
+      "submit": "Send link",
+      "backToLogin": "Back to login",
+      "sentTitle": "Check your email",
+      "sentDescription": "If an account with that email exists, we have sent a password reset link.",
+      "checkEmailToast": "Check your email",
+      "serverError": "Unable to connect to the server"
+    },
+    "resetPassword": {
+      "title": "New Password",
+      "description": "Enter a new password for your account",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm password",
+      "submit": "Reset password",
+      "loading": "Loading...",
+      "invalidLinkTitle": "Invalid link",
+      "invalidLinkDescription": "The password reset link is invalid or has expired.",
+      "requestNewLink": "Request a new link",
+      "doneTitle": "Password reset",
+      "doneDescription": "Your password has been changed successfully. You can now sign in with your new password.",
+      "login": "Sign in",
+      "successToast": "Password reset successfully",
+      "serverError": "Error resetting password"
+    },
+    "changePassword": {
+      "currentPassword": "Current password",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm password",
+      "submit": "Change password",
+      "success": "Password changed successfully",
+      "serverError": "Error changing password"
     }
   },
   "chat": {
@@ -62,7 +106,9 @@
       "loading": "Loading response",
       "ariaLabel": "Chat messages",
       "you": "You",
-      "assistant": "Assistant"
+      "assistant": "Assistant",
+      "helpfulResponse": "Helpful response",
+      "unhelpfulResponse": "Unhelpful response"
     },
     "history": {
       "title": "Chat history",
@@ -117,11 +163,14 @@
       "deleteTitle": "Delete document?",
       "deleteDescription": "Document \"{filename}\" and all its chunks will be deleted from the vector store. This action cannot be undone.",
       "cancel": "Cancel",
-      "delete": "Delete"
+      "delete": "Delete",
+      "preview": "Preview",
+      "previewDescription": "Document preview",
+      "previewLoadError": "Failed to load"
     },
     "upload": {
       "title": "Upload document",
-      "description": "Supported formats: PDF, DOCX, XLSX (up to 10 MB)",
+      "description": "Supported formats: PDF, DOCX, XLSX, TXT (up to 10 MB)",
       "unsupportedFormat": "Unsupported format. Allowed: ",
       "mimeMismatch": "File type does not match extension. Allowed: ",
       "tooLarge": "File is too large. Maximum: 10 MB",
@@ -170,16 +219,54 @@
       "userBlocked": "User blocked",
       "userUnblocked": "User unblocked",
       "roleChanged": "Role changed"
+    },
+    "analytics": {
+      "title": "Analytics",
+      "loadError": "Failed to load analytics",
+      "noData": "Data unavailable",
+      "queriesForPeriod": "Queries for period",
+      "logins": "Logins",
+      "documentUploads": "Document uploads",
+      "avgResponseTime": "Avg. response time",
+      "seconds": "s",
+      "queriesPerDay": "Queries per day",
+      "activeUsersPerDay": "Active users per day",
+      "noDataForPeriod": "No data for the selected period"
+    }
+  },
+  "profile": {
+    "title": "Profile",
+    "personalDataTitle": "Personal Details",
+    "personalDataDescription": "Update your personal information",
+    "changePasswordTitle": "Change Password",
+    "changePasswordDescription": "Update your account password",
+    "form": {
+      "email": "Email",
+      "role": "Role",
+      "fullName": "Full name",
+      "faculty": "Faculty",
+      "group": "Group",
+      "year": "Year",
+      "department": "Department",
+      "position": "Position",
+      "submit": "Save changes",
+      "loading": "Loading...",
+      "loadError": "Failed to load profile",
+      "noChanges": "No changes to save",
+      "success": "Profile updated",
+      "serverError": "Error updating profile"
     }
   },
   "layout": {
     "sidebar": {
       "navigation": "Navigation",
       "chat": "Chat",
+      "profile": "Profile",
       "admin": "Administration",
       "adminPanel": "Panel",
       "documents": "Documents",
-      "users": "Users"
+      "users": "Users",
+      "analytics": "Analytics"
     },
     "header": {
       "logout": "Log out",

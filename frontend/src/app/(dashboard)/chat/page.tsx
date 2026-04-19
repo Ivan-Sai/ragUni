@@ -16,7 +16,7 @@ export default function ChatPage() {
 
   const token = session?.accessToken || "";
 
-  const { messages, isLoading, error, sendMessage, clearMessages } = useChat({
+  const { messages, isLoading, error, sessionId, sendMessage, clearMessages } = useChat({
     token,
   });
 
@@ -31,7 +31,7 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] -m-6">
-      <ChatMessageList messages={messages} isLoading={isLoading} />
+      <ChatMessageList messages={messages} isLoading={isLoading} sessionId={sessionId} />
 
       {error && (
         <div className="px-4 py-2 text-sm text-destructive bg-destructive/10 border-t" role="alert">

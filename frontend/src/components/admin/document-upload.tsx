@@ -21,6 +21,7 @@ const ALLOWED_TYPES = [
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/plain",
 ];
 
 const ALLOWED_EXTENSIONS = ["pdf", "docx", "xlsx", "txt"];
@@ -122,7 +123,7 @@ export function DocumentUpload({ onUpload, isUploading }: DocumentUploadProps) {
               <FileUp className="h-5 w-5 text-muted-foreground" />
               <span className="text-sm font-medium">{selectedFile.name}</span>
               <span className="text-xs text-muted-foreground">
-                ({(selectedFile.size / 1024).toFixed(0)} {tCommon("kb")})
+                ({Math.max(1, Math.round(selectedFile.size / 1024))} {tCommon("kb")})
               </span>
               <Button
                 variant="ghost"
@@ -145,7 +146,7 @@ export function DocumentUpload({ onUpload, isUploading }: DocumentUploadProps) {
           <input
             ref={inputRef}
             type="file"
-            accept={ALLOWED_TYPES.join(",")}
+            accept={[...ALLOWED_TYPES, ".pdf", ".docx", ".xlsx", ".txt"].join(",")}
             onChange={handleInputChange}
             className={selectedFile ? "hidden" : "absolute inset-0 w-full h-full opacity-0 cursor-pointer"}
             style={selectedFile ? undefined : { position: "absolute", inset: 0 }}

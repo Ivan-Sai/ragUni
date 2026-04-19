@@ -11,6 +11,7 @@ import type { ChatMessage } from "@/types/api";
 interface ChatMessageListProps {
   messages: ChatMessage[];
   isLoading: boolean;
+  sessionId?: string | null;
 }
 
 function EmptyState() {
@@ -41,7 +42,7 @@ function LoadingIndicator() {
   );
 }
 
-export function ChatMessageList({ messages, isLoading }: ChatMessageListProps) {
+export function ChatMessageList({ messages, isLoading, sessionId }: ChatMessageListProps) {
   const t = useTranslations("chat.messages");
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -57,7 +58,7 @@ export function ChatMessageList({ messages, isLoading }: ChatMessageListProps) {
     <ScrollArea className="flex-1">
       <div className="py-4" role="log" aria-live="polite" aria-label={t("ariaLabel")}>
         {messages.map((message, index) => (
-          <ChatMessageBubble key={`${message.role}-${index}-${message.timestamp}`} message={message} />
+          <ChatMessageBubble key={`${message.role}-${index}-${message.timestamp}`} message={message} messageIndex={index} sessionId={sessionId} />
         ))}
         {isLoading && <LoadingIndicator />}
         <div ref={bottomRef} />

@@ -237,6 +237,11 @@ export function useChat({ token, sessionId: initialSessionId = null }: UseChatOp
               },
               (newSessionId) => {
                 setSessionId(newSessionId);
+                window.dispatchEvent(
+                  new CustomEvent("chat-session-created", {
+                    detail: { sessionId: newSessionId },
+                  })
+                );
               },
               (errMsg) => {
                 sseErrorMessage = errMsg;

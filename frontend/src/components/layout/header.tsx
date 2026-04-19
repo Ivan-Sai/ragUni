@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { LocaleSwitcher } from "@/components/layout/locale-switcher";
 
 export function Header() {
   const t = useTranslations("layout.header");
@@ -16,16 +17,17 @@ export function Header() {
       <h1 className="text-lg font-semibold">UniRAG</h1>
 
       <div className="flex items-center gap-3">
+        <LocaleSwitcher />
         <ThemeToggle />
 
         {status === "authenticated" && session?.user ? (
           <div className="flex items-center gap-3">
-            <div className="text-sm text-right">
+            <Link href="/profile" className="text-sm text-right hover:underline">
               <p className="font-medium">{session.user.name}</p>
               <p className="text-muted-foreground text-xs">
                 {session.user.role}
               </p>
-            </div>
+            </Link>
             <Button
               variant="ghost"
               size="icon"

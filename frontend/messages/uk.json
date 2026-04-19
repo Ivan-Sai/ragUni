@@ -12,6 +12,7 @@
       "submit": "Увійти",
       "noAccount": "Немає акаунту?",
       "register": "Зареєструватися",
+      "forgotPassword": "Забули пароль?",
       "invalidCredentials": "Невірна електронна пошта або пароль",
       "success": "Успішний вхід!",
       "serverError": "Помилка з'єднання з сервером. Спробуйте пізніше."
@@ -45,9 +46,52 @@
     },
     "validation": {
       "emailRequired": "Email є обов'язковим",
+      "emailInvalid": "Невірний формат email",
       "passwordRequired": "Пароль є обов'язковим",
+      "passwordMinLength": "Пароль повинен містити щонайменше 8 символів",
       "fullNameRequired": "Повне ім'я є обов'язковим",
-      "facultyRequired": "Факультет є обов'язковим"
+      "facultyRequired": "Факультет є обов'язковим",
+      "currentPasswordRequired": "Поточний пароль є обов'язковим",
+      "confirmPasswordRequired": "Підтвердження пароля є обов'язковим",
+      "passwordsDoNotMatch": "Паролі не співпадають",
+      "passwordUppercase": "Пароль має містити хоча б одну велику літеру",
+      "passwordLowercase": "Пароль має містити хоча б одну малу літеру",
+      "passwordDigit": "Пароль має містити хоча б одну цифру"
+    },
+    "forgotPassword": {
+      "title": "Скидання пароля",
+      "description": "Введіть email для отримання посилання на скидання пароля",
+      "email": "Email",
+      "submit": "Надіслати посилання",
+      "backToLogin": "Повернутися до входу",
+      "sentTitle": "Перевірте пошту",
+      "sentDescription": "Якщо акаунт з таким email існує, ми надіслали посилання для скидання пароля.",
+      "checkEmailToast": "Перевірте вашу пошту",
+      "serverError": "Помилка з'єднання з сервером"
+    },
+    "resetPassword": {
+      "title": "Новий пароль",
+      "description": "Введіть новий пароль для вашого акаунту",
+      "newPassword": "Новий пароль",
+      "confirmPassword": "Підтвердження пароля",
+      "submit": "Скинути пароль",
+      "loading": "Завантаження...",
+      "invalidLinkTitle": "Невірне посилання",
+      "invalidLinkDescription": "Посилання для скидання пароля недійсне або протерміноване.",
+      "requestNewLink": "Запросити нове посилання",
+      "doneTitle": "Пароль скинуто",
+      "doneDescription": "Ваш пароль успішно змінено. Тепер ви можете увійти з новим паролем.",
+      "login": "Увійти",
+      "successToast": "Пароль успішно скинуто",
+      "serverError": "Помилка скидання пароля"
+    },
+    "changePassword": {
+      "currentPassword": "Поточний пароль",
+      "newPassword": "Новий пароль",
+      "confirmPassword": "Підтвердження пароля",
+      "submit": "Змінити пароль",
+      "success": "Пароль успішно змінено",
+      "serverError": "Помилка зміни пароля"
     }
   },
   "chat": {
@@ -62,7 +106,9 @@
       "loading": "Завантаження відповіді",
       "ariaLabel": "Повідомлення чату",
       "you": "Ви",
-      "assistant": "Асистент"
+      "assistant": "Асистент",
+      "helpfulResponse": "Корисна відповідь",
+      "unhelpfulResponse": "Некорисна відповідь"
     },
     "history": {
       "title": "Історія чатів",
@@ -117,11 +163,14 @@
       "deleteTitle": "Видалити документ?",
       "deleteDescription": "Документ \"{filename}\" та всі його чанки будуть видалені з векторного сховища. Цю дію неможливо скасувати.",
       "cancel": "Скасувати",
-      "delete": "Видалити"
+      "delete": "Видалити",
+      "preview": "Переглянути",
+      "previewDescription": "Попередній перегляд документу",
+      "previewLoadError": "Не вдалося завантажити"
     },
     "upload": {
       "title": "Завантажити документ",
-      "description": "Підтримувані формати: PDF, DOCX, XLSX (до 10 МБ)",
+      "description": "Підтримувані формати: PDF, DOCX, XLSX, TXT (до 10 МБ)",
       "unsupportedFormat": "Непідтримуваний формат. Дозволені: ",
       "mimeMismatch": "Тип файлу не відповідає розширенню. Дозволені: ",
       "tooLarge": "Файл занадто великий. Максимум: 10 МБ",
@@ -170,16 +219,54 @@
       "userBlocked": "Користувача заблоковано",
       "userUnblocked": "Користувача розблоковано",
       "roleChanged": "Роль змінено"
+    },
+    "analytics": {
+      "title": "Аналітика",
+      "loadError": "Не вдалося завантажити аналітику",
+      "noData": "Дані недоступні",
+      "queriesForPeriod": "Запити за період",
+      "logins": "Логіни",
+      "documentUploads": "Завантаження документів",
+      "avgResponseTime": "Сер. час відповіді",
+      "seconds": "с",
+      "queriesPerDay": "Запити за день",
+      "activeUsersPerDay": "Активні користувачі за день",
+      "noDataForPeriod": "Немає даних за обраний період"
+    }
+  },
+  "profile": {
+    "title": "Профіль",
+    "personalDataTitle": "Особисті дані",
+    "personalDataDescription": "Оновіть вашу персональну інформацію",
+    "changePasswordTitle": "Зміна пароля",
+    "changePasswordDescription": "Оновіть пароль вашого акаунту",
+    "form": {
+      "email": "Email",
+      "role": "Роль",
+      "fullName": "Повне ім'я",
+      "faculty": "Факультет",
+      "group": "Група",
+      "year": "Курс",
+      "department": "Кафедра",
+      "position": "Посада",
+      "submit": "Зберегти зміни",
+      "loading": "Завантаження...",
+      "loadError": "Не вдалося завантажити профіль",
+      "noChanges": "Немає змін для збереження",
+      "success": "Профіль оновлено",
+      "serverError": "Помилка оновлення профілю"
     }
   },
   "layout": {
     "sidebar": {
       "navigation": "Навігація",
       "chat": "Чат",
+      "profile": "Профіль",
       "admin": "Адміністрування",
       "adminPanel": "Панель",
       "documents": "Документи",
-      "users": "Користувачі"
+      "users": "Користувачі",
+      "analytics": "Аналітика"
     },
     "header": {
       "logout": "Вийти",

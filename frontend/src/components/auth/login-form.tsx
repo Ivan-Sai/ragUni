@@ -7,8 +7,10 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import { loginSchema } from "@/lib/validations";
+import { mapZodErrors } from "@/lib/validation-i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import {
   Card,
@@ -36,14 +38,7 @@ export function LoginForm() {
 
     const validation = loginSchema.safeParse({ email, password });
     if (!validation.success) {
-      const errors: Record<string, string> = {};
-      for (const issue of validation.error.issues) {
-        const field = String(issue.path[0]);
-        if (!errors[field]) {
-          errors[field] = issue.message;
-        }
-      }
-      setFieldErrors(errors);
+      setFieldErrors(mapZodErrors(validation.error.issues, tValidation));
       return;
     }
 
@@ -78,7 +73,7 @@ export function LoginForm() {
           {t("description")}
         </CardDescription>
       </CardHeader>
-      <form onSubmit={handleSubmit} noValidate>
+      <form onSubmit={handleSubmit} method="POST" noValidate>
         <CardContent className="space-y-4 pb-2">
           {error && (
             <p className="text-sm text-destructive" role="alert">
@@ -104,9 +99,8 @@ export function LoginForm() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">{t("password")}</Label>
-            <Input
+            <PasswordInput
               id="password"
-              type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               aria-invalid={!!fieldErrors.password}
@@ -123,6 +117,12 @@ export function LoginForm() {
           <Button type="submit" className="w-full" disabled={loading}>
             {t("submit")}
           </Button>
+          <Link
+            href="/forgot-password"
+            className="text-sm text-muted-foreground hover:text-primary underline"
+          >
+            {t("forgotPassword")}
+          </Link>
           <p className="text-sm text-muted-foreground">
             {t("noAccount")}{" "}
             <Link href="/register" className="text-primary underline">

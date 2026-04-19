@@ -43,6 +43,16 @@ export function useChatHistory({ token }: UseChatHistoryOptions): UseChatHistory
     fetchSessions();
   }, [fetchSessions]);
 
+  useEffect(() => {
+    function handleSessionCreated() {
+      fetchSessions();
+    }
+    window.addEventListener("chat-session-created", handleSessionCreated);
+    return () => {
+      window.removeEventListener("chat-session-created", handleSessionCreated);
+    };
+  }, [fetchSessions]);
+
   const deleteSession = useCallback(
     async (sessionId: string) => {
       await chatApi.deleteSession(sessionId, token);

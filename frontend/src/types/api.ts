@@ -50,6 +50,60 @@ export interface ApiError {
   detail: string;
 }
 
+// --- Password management types ---
+
+export interface ChangePasswordData {
+  current_password: string;
+  new_password: string;
+}
+
+export interface ForgotPasswordData {
+  email: string;
+}
+
+export interface ResetPasswordData {
+  token: string;
+  new_password: string;
+}
+
+export interface ProfileUpdateData {
+  full_name?: string;
+  faculty?: string;
+  group?: string;
+  year?: number;
+  department?: string;
+  position?: string;
+}
+
+export interface MessageResponse {
+  message: string;
+}
+
+// --- Feedback types ---
+
+export interface FeedbackData {
+  session_id: string;
+  message_index: number;
+  feedback_type: "thumbs_up" | "thumbs_down";
+  comment?: string;
+}
+
+export interface FeedbackResponse {
+  id: string;
+  session_id: string;
+  message_index: number;
+  feedback_type: "thumbs_up" | "thumbs_down";
+  comment: string | null;
+  created_at: string;
+}
+
+export interface FeedbackStats {
+  total_feedback: number;
+  thumbs_up: number;
+  thumbs_down: number;
+  satisfaction_rate: number;
+}
+
 // --- Chat types ---
 
 export interface ChatSource {

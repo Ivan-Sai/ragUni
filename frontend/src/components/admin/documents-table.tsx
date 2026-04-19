@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { Trash2, FileText, FileSpreadsheet, File } from "lucide-react";
+import { Trash2, FileText, FileSpreadsheet, File, Eye } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -25,6 +25,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DocumentPreview } from "@/components/documents/document-preview";
 import type { DocumentInfo } from "@/types/api";
 
 interface DocumentsTableProps {
@@ -62,6 +63,7 @@ export function DocumentsTable({
 }: DocumentsTableProps) {
   const t = useTranslations("admin.documents");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<{ id: string; filename: string } | null>(null);
 
   async function handleDelete(documentId: string) {
     setDeletingId(documentId);
@@ -120,6 +122,14 @@ export function DocumentsTable({
                   <TableCell>{doc.total_chunks}</TableCell>
                   <TableCell>{formatDate(doc.uploaded_at)}</TableCell>
                   <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setPreviewDoc({ id: doc.id, filename: doc.filename })}
+                      aria-label={t("preview")}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
                     <AlertDialog>
                       <AlertDialogTrigger
                         disabled={deletingId === doc.id}
@@ -154,6 +164,12 @@ export function DocumentsTable({
           )}
         </TableBody>
       </Table>
+      <DocumentPreview
+        documentId={previewDoc?.id ?? null}
+        filename={previewDoc?.filename ?? ""}
+        open={!!previewDoc}
+        onOpenChange={(open) => { if (!open) setPreviewDoc(null); }}
+      />
     </div>
   );
 }

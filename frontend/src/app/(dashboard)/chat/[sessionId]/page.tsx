@@ -11,14 +11,14 @@ export default function ChatSessionPage() {
   const { data: session } = useSession();
   const token = session?.accessToken || "";
 
-  const { messages, isLoading, error, sendMessage } = useChat({
+  const { messages, isLoading, error, sessionId, sendMessage } = useChat({
     token,
     sessionId: params.sessionId,
   });
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] -m-6">
-      <ChatMessageList messages={messages} isLoading={isLoading} />
+      <ChatMessageList messages={messages} isLoading={isLoading} sessionId={sessionId} />
 
       {error && (
         <div className="px-4 py-2 text-sm text-destructive bg-destructive/10 border-t">

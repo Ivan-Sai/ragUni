@@ -7,9 +7,11 @@ import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import { authApi } from "@/lib/api";
 import { registerSchema } from "@/lib/validations";
+import { mapZodErrors } from "@/lib/validation-i18n";
 import type { UserRole } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import {
   Card,
@@ -81,14 +83,7 @@ export function RegisterForm() {
 
     const validation = registerSchema.safeParse(rawData);
     if (!validation.success) {
-      const errors: Record<string, string> = {};
-      for (const issue of validation.error.issues) {
-        const field = String(issue.path[0]);
-        if (!errors[field]) {
-          errors[field] = issue.message;
-        }
-      }
-      setFieldErrors(errors);
+      setFieldErrors(mapZodErrors(validation.error.issues, tValidation));
       return;
     }
 
@@ -97,7 +92,9 @@ export function RegisterForm() {
     try {
       await authApi.register(rawData);
       toast.success(t("success"));
-      router.push("/login");
+      setTimeout(() => {
+        router.push("/login");
+      }, 1000);
     } catch (err) {
       if (err instanceof TypeError && err.message === "Failed to fetch") {
         setError(t("serverError"));
@@ -115,7 +112,7 @@ export function RegisterForm() {
         <CardTitle>{t("title")}</CardTitle>
         <CardDescription>{t("description")}</CardDescription>
       </CardHeader>
-      <form onSubmit={handleSubmit} noValidate>
+      <form onSubmit={handleSubmit} method="POST" noValidate>
         <CardContent className="space-y-4 pb-2">
           {error && (
             <p className="text-sm text-destructive" role="alert">
@@ -142,10 +139,9 @@ export function RegisterForm() {
 
           <div className="space-y-2">
             <Label htmlFor="password">{t("password")}</Label>
-            <Input
+            <PasswordInput
               id="password"
               name="password"
-              type="password"
               aria-invalid={!!fieldErrors.password}
               aria-describedby={fieldErrors.password ? "reg-password-error" : undefined}
             />
