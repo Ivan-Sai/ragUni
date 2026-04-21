@@ -128,6 +128,11 @@ export const authOptions: NextAuthConfig = {
     },
     async session({ session, token }) {
       if (session.user) {
+        session.user.id = token.sub ?? session.user.id;
+        session.user.email =
+          (token.email as string | undefined) ?? session.user.email;
+        session.user.name =
+          (token.name as string | undefined) ?? session.user.name;
         session.user.role = token.role as string;
         session.user.faculty = token.faculty as string;
       }

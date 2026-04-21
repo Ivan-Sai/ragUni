@@ -92,7 +92,7 @@ async function request<T>(
       await signOut({ callbackUrl: "/login" });
     }
 
-    let detail = "Server error";
+    let detail = "Помилка сервера";
     try {
       const errorData = await response.json();
       if (errorData.detail && typeof errorData.detail === "string") {
@@ -222,7 +222,7 @@ export const chatApi = {
     });
 
     if (!response.ok) {
-      let detail = "Server error";
+      let detail = "Помилка сервера";
       try {
         const errorData = await response.json();
         if (errorData.detail) {
@@ -345,7 +345,7 @@ export const documentsApi = {
     });
 
     if (!response.ok) {
-      let detail = "Upload error";
+      let detail = "Помилка завантаження";
       try {
         const errorData = await response.json();
         if (errorData.detail) detail = errorData.detail;
