@@ -53,12 +53,15 @@ class TestExtractSources:
 
     def test_truncates_long_preview(self):
         doc = LCDocument(
-            page_content="x" * 300,
+            page_content="x" * 600,
             metadata={"source_file": "test.pdf", "chunk_index": 0},
         )
         sources = extract_sources([doc])
-        assert len(sources[0]["text"]) < 300
-        assert sources[0]["text"].endswith("...")
+        # With the new sentence-aware truncator the preview falls back
+        # to a hard cut for repetitive input and ends with the typographic
+        # ellipsis "…" instead of three dots.
+        assert len(sources[0]["text"]) < 600
+        assert sources[0]["text"].endswith("…")
 
     def test_preserves_short_preview(self):
         doc = LCDocument(
@@ -104,100 +107,82 @@ class TestRunRagChain:
         mock_vs.get_hybrid_retriever = MagicMock(return_value=self._make_mock_retriever(docs))
         mock_vs.get_retriever = MagicMock(return_value=self._make_mock_retriever(docs))
 
-    @pytest.mark.asyncio
-    async def test_initializes_and_calls_access_filter(self):
-        """run_rag_chain must build access filter."""
-        mock_doc = LCDocument(
+    def _make_scored_doc(self, score: float = 0.9) -> LCDocument:
+        """Build a doc whose metadata already contains a score, so the
+        no-answer guard treats it as grounded."""
+        return LCDocument(
             page_content="Test content",
-            metadata={"source_file": "test.pdf", "chunk_index": 0},
+            metadata={
+                "source_file": "test.pdf",
+                "chunk_index": 0,
+                "score": score,
+            },
         )
 
+    @pytest.mark.asyncio
+    async def test_initializes_and_calls_access_filter(self):
+        """run_rag_chain must build the access filter and produce sources."""
         mock_chain = self._make_mock_chain()
+        scored_doc = self._make_scored_doc()
         with (
             patch("app.api.v1.chat.vector_store_service") as mock_vs,
             patch("app.api.v1.chat.get_llm", new_callable=AsyncMock),
             patch("app.api.v1.chat.rag_prompt") as mock_prompt,
+            patch(
+                "app.api.v1.chat._retrieve_scored_docs",
+                new_callable=AsyncMock,
+                return_value=[scored_doc],
+            ),
+            patch(
+                "app.api.v1.chat._attach_document_ids",
+                new_callable=AsyncMock,
+                side_effect=lambda s: s,
+            ),
             patch("app.api.v1.chat.settings") as mock_settings,
         ):
-            mock_settings.use_hybrid_search = True
             mock_settings.top_k_results = 5
             mock_settings.llm_timeout_seconds = 30
-            self._setup_vs_mock(mock_vs, access_filter={}, docs=[mock_doc])
+            mock_settings.no_answer_score_threshold = 0.55
+            mock_settings.max_conversation_messages = 8
+            mock_settings.source_preview_max_chars = 350
+            mock_vs.build_access_filter = MagicMock(return_value={})
             mock_prompt.__or__ = MagicMock(return_value=mock_chain)
 
             result = await run_rag_chain("Тестове питання", "student", "CS")
 
             mock_vs.build_access_filter.assert_called_once_with("student", "CS")
-            assert "sources" in result
-            assert "docs" in result
+            assert result["grounded"] is True
             assert len(result["docs"]) == 1
+            assert result["sources"]
 
     @pytest.mark.asyncio
-    async def test_hybrid_search_preferred(self):
-        """When use_hybrid_search=True, hybrid retriever is used first."""
-        mock_chain = self._make_mock_chain()
+    async def test_no_answer_guard_below_threshold(self):
+        """Empty / low-score retrieval triggers the canned no-answer reply."""
+        weak_doc = LCDocument(
+            page_content="weak",
+            metadata={"source_file": "x.pdf", "chunk_index": 0, "score": 0.1},
+        )
         with (
             patch("app.api.v1.chat.vector_store_service") as mock_vs,
-            patch("app.api.v1.chat.get_llm", new_callable=AsyncMock),
-            patch("app.api.v1.chat.rag_prompt") as mock_prompt,
+            patch(
+                "app.api.v1.chat._retrieve_scored_docs",
+                new_callable=AsyncMock,
+                return_value=[weak_doc],
+            ),
             patch("app.api.v1.chat.settings") as mock_settings,
         ):
-            mock_settings.use_hybrid_search = True
             mock_settings.top_k_results = 5
             mock_settings.llm_timeout_seconds = 30
-            self._setup_vs_mock(mock_vs)
-            mock_prompt.__or__ = MagicMock(return_value=mock_chain)
+            mock_settings.no_answer_score_threshold = 0.55
+            mock_settings.source_preview_max_chars = 350
+            mock_vs.build_access_filter = MagicMock(return_value={})
 
-            await run_rag_chain("Test", "student")
+            result = await run_rag_chain("Test", "student", None)
 
-            mock_vs.get_hybrid_retriever.assert_called_once()
-            mock_vs.get_retriever.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_hybrid_fallback_to_mmr(self):
-        """When hybrid search raises ValueError/RuntimeError, falls back to MMR retriever."""
-        mock_chain = self._make_mock_chain()
-        with (
-            patch("app.api.v1.chat.vector_store_service") as mock_vs,
-            patch("app.api.v1.chat.get_llm", new_callable=AsyncMock),
-            patch("app.api.v1.chat.rag_prompt") as mock_prompt,
-            patch("app.api.v1.chat.settings") as mock_settings,
-        ):
-            mock_settings.use_hybrid_search = True
-            mock_settings.top_k_results = 5
-            mock_settings.llm_timeout_seconds = 30
-            self._setup_vs_mock(mock_vs)
-            mock_vs.get_hybrid_retriever = MagicMock(side_effect=ValueError("No index"))
-            mock_prompt.__or__ = MagicMock(return_value=mock_chain)
-
-            await run_rag_chain("Test", "student")
-
-            mock_vs.get_retriever.assert_called_once()
-            call_kwargs = mock_vs.get_retriever.call_args[1]
-            assert call_kwargs["search_type"] == "mmr"
-
-    @pytest.mark.asyncio
-    async def test_mmr_when_hybrid_disabled(self):
-        """When use_hybrid_search=False, MMR retriever is used directly."""
-        mock_chain = self._make_mock_chain()
-        with (
-            patch("app.api.v1.chat.vector_store_service") as mock_vs,
-            patch("app.api.v1.chat.get_llm", new_callable=AsyncMock),
-            patch("app.api.v1.chat.rag_prompt") as mock_prompt,
-            patch("app.api.v1.chat.settings") as mock_settings,
-        ):
-            mock_settings.use_hybrid_search = False
-            mock_settings.top_k_results = 5
-            mock_settings.llm_timeout_seconds = 30
-            self._setup_vs_mock(mock_vs)
-            mock_prompt.__or__ = MagicMock(return_value=mock_chain)
-
-            await run_rag_chain("Test", "student")
-
-            mock_vs.get_hybrid_retriever.assert_not_called()
-            mock_vs.get_retriever.assert_called_once()
-            call_kwargs = mock_vs.get_retriever.call_args[1]
-            assert call_kwargs["search_type"] == "mmr"
+            assert result["grounded"] is False
+            assert result["sources"] == []
+            assert result["docs"] == []
+            assert "немає інформації" in result["answer"]
 
     @pytest.mark.asyncio
     async def test_student_access_filter(self):

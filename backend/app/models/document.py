@@ -84,6 +84,9 @@ class SourceCitation(BaseModel):
     chunk_index: int = 0
     total_chunks: int = 0
     text: str = ""
+    score: Optional[float] = None
+    document_id: Optional[str] = None
+    page: Optional[int] = None
 
 
 class ChatResponse(BaseModel):
@@ -92,3 +95,4 @@ class ChatResponse(BaseModel):
     answer: str
     sources: list[SourceCitation]
     processing_time: float
+    grounded: bool = True

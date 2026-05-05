@@ -45,7 +45,19 @@ class Settings(BaseSettings):
     vector_index_name: str = "vector_index"
     fulltext_index_name: str = "text_index"
     use_hybrid_search: bool = True
-    vector_score_threshold: float = Field(default=0.55, ge=0.0, le=1.0)
+    vector_score_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
+    # Below this threshold the answer is considered ungrounded — we tell the
+    # user "no relevant information found" rather than letting the LLM
+    # hallucinate from weak matches.
+    no_answer_score_threshold: float = Field(default=0.55, ge=0.0, le=1.0)
+    # Smaller chunks for XLSX so individual rows / table sections survive
+    # intact rather than being split across two chunks.
+    chunk_size_xlsx: int = Field(default=600, ge=200, le=2000)
+    chunk_overlap_xlsx: int = Field(default=100, ge=0, le=500)
+    # Source-card preview length shown in the UI. 350 chars is roughly two
+    # full sentences — enough context to judge relevance, short enough to
+    # stay legible.
+    source_preview_max_chars: int = Field(default=350, ge=120, le=1000)
 
     # MongoDB Atlas API Configuration (for automatic index creation)
     atlas_public_key: Optional[str] = None

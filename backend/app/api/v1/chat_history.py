@@ -22,9 +22,13 @@ from app.services.database import get_database
 from app.services.input_sanitizer import input_sanitizer
 from app.services.vector_store import vector_store_service
 from app.api.v1.chat import (
-    format_docs,
-    format_chat_history,
+    NO_ANSWER_TEXT,
+    _attach_document_ids,
+    _dedup_chunks,
+    _retrieve_scored_docs,
     extract_sources,
+    format_chat_history,
+    format_docs,
     get_llm,
     rag_prompt,
     rag_prompt_with_history,
@@ -72,42 +76,36 @@ async def generate_rag_stream(
             yield {"event": "done", "data": ""}
             return
 
-        # Choose retriever: hybrid (vector + full-text RRF) or MMR
-        if settings.use_hybrid_search:
-            try:
-                retriever = vector_store_service.get_hybrid_retriever(
-                    k=settings.top_k_results,
-                    pre_filter=pre_filter or None,
-                )
-            except (ValueError, RuntimeError):
-                retriever = vector_store_service.get_retriever(
-                    search_type="mmr",
-                    k=settings.top_k_results,
-                    pre_filter=pre_filter or None,
-                    fetch_k=settings.top_k_results * 4,
-                    lambda_mult=0.7,
-                )
-        else:
-            retriever = vector_store_service.get_retriever(
-                search_type="mmr",
-                k=settings.top_k_results,
-                pre_filter=pre_filter or None,
-                fetch_k=settings.top_k_results * 4,
-                lambda_mult=0.7,
-            )
-
-        # Retrieve with timeout
+        # Retrieve with scoring + dedup, then no-answer guard mirrors /ask.
         try:
-            docs = await asyncio.wait_for(
-                retriever.ainvoke(question),
-                timeout=float(settings.llm_timeout_seconds),
+            docs = await _retrieve_scored_docs(
+                question=question,
+                pre_filter=pre_filter,
+                k=settings.top_k_results,
             )
-        except asyncio.TimeoutError:
-            yield {"event": "error", "data": "Пошук зайняв занадто багато часу"}
+        except HTTPException as exc:
+            yield {"event": "error", "data": exc.detail}
+            return
+        docs = _dedup_chunks(docs)
+
+        top_score = max(
+            (d.metadata.get("score", 0.0) for d in docs),
+            default=0.0,
+        )
+        if not docs or top_score < settings.no_answer_score_threshold:
+            logger.info(
+                "SSE no-answer guard: %d docs, top_score=%.2f",
+                len(docs),
+                top_score,
+            )
+            yield {"event": "session_id", "data": session_id}
+            yield {"event": "token", "data": NO_ANSWER_TEXT}
+            yield {"event": "done", "data": ""}
             return
 
         context = format_docs(docs)
         sources = extract_sources(docs)
+        sources = await _attach_document_ids(sources)
 
         # Send session ID so the frontend can track the conversation
         yield {"event": "session_id", "data": session_id}
