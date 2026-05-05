@@ -140,6 +140,12 @@ async def upload_document(
         now = datetime.now(timezone.utc)
         user_id = str(current_user["_id"])
 
+        # Reserve a document id up-front so each chunk can carry it in
+        # its metadata. The frontend uses this id to open the source
+        # document directly from a citation card without an extra
+        # filename → id lookup.
+        document_oid = ObjectId()
+
         # Metadata stored with each chunk in vector store (no PII)
         chunk_metadata = {
             "source_file": file.filename,
@@ -150,21 +156,26 @@ async def upload_document(
             "uploaded_by_id": user_id,
             "original_size": len(file_content),
             "text_length": len(text),
+            "document_id": str(document_oid),
         }
 
-        # Add to vector store (async — runs in thread pool)
+        # Add to vector store (async — runs in thread pool). Pass file_type
+        # so XLSX uses the smaller chunk window that keeps tables intact.
         logger.info(
             "Chunking (size=%d, overlap=%d) and embedding...",
             settings.chunk_size,
             settings.chunk_overlap,
         )
-        chunk_ids = await vector_store_service.add_document_with_chunking(text, chunk_metadata)
+        chunk_ids = await vector_store_service.add_document_with_chunking(
+            text, chunk_metadata, file_type=file_extension,
+        )
 
         logger.info("Created %d chunks with embeddings", len(chunk_ids))
 
         # Save document record to MongoDB (including extracted text for preview)
         db = get_database()
         document_data = {
+            "_id": document_oid,
             "filename": file.filename,
             "file_type": file_extension,
             "access_level": access_level,
@@ -177,8 +188,8 @@ async def upload_document(
             "extracted_text": text,
         }
 
-        result = await db.documents.insert_one(document_data)
-        document_id = str(result.inserted_id)
+        await db.documents.insert_one(document_data)
+        document_id = str(document_oid)
 
         logger.info("Document saved: %s (id=%s)", file.filename, document_id)
 

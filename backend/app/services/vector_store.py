@@ -11,6 +11,7 @@ Features:
 
 import asyncio
 import logging
+import re
 import threading
 from typing import Any, Optional
 
@@ -152,9 +153,39 @@ class VectorStoreService:
     # ------------------------------------------------------------------
 
     def chunk_text(self, text: str) -> list[str]:
-        """Split text into semantic chunks."""
+        """Split text into semantic chunks (default chunk size)."""
         if not text or not text.strip():
             return []
+        return self.text_splitter.split_text(text)
+
+    def chunk_text_for_type(self, text: str, file_type: Optional[str]) -> list[str]:
+        """Split text using a chunk strategy tuned to the file type.
+
+        XLSX rows are short and tabular, so the default 1000-char chunker
+        ends up splitting tables mid-row. For spreadsheets we use a smaller
+        window so a 20-row table stays as one or two chunks instead of five.
+        """
+        if not text or not text.strip():
+            return []
+        if (file_type or "").lower() == "xlsx":
+            xlsx_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=settings.chunk_size_xlsx,
+                chunk_overlap=settings.chunk_overlap_xlsx,
+                length_function=len,
+                # Prioritise table boundaries before falling back to
+                # sentence and word breaks.
+                separators=[
+                    "\n--- End of sheet",
+                    "\n--- Sheet:",
+                    "\n\n",
+                    "\n",
+                    " | ",
+                    ". ",
+                    " ",
+                    "",
+                ],
+            )
+            return xlsx_splitter.split_text(text)
         return self.text_splitter.split_text(text)
 
     # ------------------------------------------------------------------
@@ -188,21 +219,53 @@ class VectorStoreService:
         self,
         text: str,
         metadata: dict,
+        file_type: Optional[str] = None,
     ) -> list[str]:
         """Chunk text + add to vector store (blocking)."""
-        chunks = self.chunk_text(text)
+        ftype = (file_type or metadata.get("file_type") or "").lower()
+        chunks = self.chunk_text_for_type(text, ftype)
         if not chunks:
             raise ValueError("No chunks created from text")
 
-        chunk_metadatas = [
-            {
+        chunk_metadatas: list[dict] = []
+        # For PDF input, parse_pdf prefixes each page with a "--- Page N ---"
+        # marker — recover the page number per chunk by tracking the
+        # latest marker we saw in the original text up to the chunk's
+        # position.
+        page_markers: list[tuple[int, int]] = []  # (offset, page_number)
+        if ftype == "pdf":
+            for match in re.finditer(r"--- Page (\d+) ---", text):
+                page_markers.append((match.start(), int(match.group(1))))
+
+        cursor = 0
+        for idx, chunk in enumerate(chunks):
+            page = None
+            if page_markers:
+                # Find chunk start in the original text starting from
+                # cursor — RecursiveCharacterTextSplitter overlaps a
+                # little, but the chunk content remains a substring of
+                # the source.
+                start = text.find(chunk[:80], cursor)
+                if start == -1:
+                    start = cursor
+                cursor = max(cursor, start)
+                # Latest marker offset <= start.
+                for offset, page_num in page_markers:
+                    if offset <= start:
+                        page = page_num
+                    else:
+                        break
+
+            entry: dict = {
                 **metadata,
                 "chunk_index": idx,
                 "total_chunks": len(chunks),
                 "chunk_length": len(chunk),
             }
-            for idx, chunk in enumerate(chunks)
-        ]
+            if page is not None:
+                entry["page"] = page
+            chunk_metadatas.append(entry)
+
         return self._add_documents_sync(chunks, chunk_metadatas)
 
     # ------------------------------------------------------------------
@@ -224,10 +287,11 @@ class VectorStoreService:
         self,
         text: str,
         metadata: dict,
+        file_type: Optional[str] = None,
     ) -> list[str]:
         """Chunk + add document — async-safe wrapper."""
         return await asyncio.to_thread(
-            self._add_document_with_chunking_sync, text, metadata
+            self._add_document_with_chunking_sync, text, metadata, file_type
         )
 
     # ------------------------------------------------------------------

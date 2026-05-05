@@ -15,7 +15,13 @@ class DocumentParser:
 
     @staticmethod
     async def parse_pdf(file_content: bytes) -> str:
-        """Parse PDF file and extract text."""
+        """Parse PDF and return text annotated with page markers.
+
+        The ``--- Page N ---`` markers are kept inline because the
+        recursive text splitter respects the surrounding ``\\n\\n``
+        boundaries — that lets us recover the page number for any chunk
+        by scanning back to the nearest marker.
+        """
         try:
             pdf_file = io.BytesIO(file_content)
             pdf_reader = PdfReader(pdf_file)
