@@ -175,6 +175,25 @@ async def root():
     }
 
 
+APP_VERSION = "1.0.0"
+
+
+@app.get("/api/v1/version")
+async def version() -> dict[str, str]:
+    """Return the deployed application version + git commit (if injected).
+
+    Useful for debugging which release is live in a given environment.
+    The git SHA is provided via the GIT_SHA env var at build / deploy
+    time; locally it falls back to "dev".
+    """
+    import os
+    return {
+        "version": APP_VERSION,
+        "git_sha": os.environ.get("GIT_SHA", "dev"),
+        "environment": _settings.environment,
+    }
+
+
 @app.get("/health")
 async def health():
     """Simple health check for Docker/load balancers."""
