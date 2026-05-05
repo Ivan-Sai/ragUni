@@ -20,6 +20,7 @@ import type {
   DocumentsListResponse,
   DocumentDeleteResponse,
   DocumentUploadResponse,
+  DocumentPreviewResponse,
   DocumentStats,
   SystemHealth,
   UserRole,
@@ -361,9 +362,14 @@ export const documentsApi = {
     return response.json();
   },
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async getPreview(documentId: string, token: string): Promise<any> {
-    return apiClient.get(`/documents/${documentId}/preview`, { token });
+  async getPreview(
+    documentId: string,
+    token: string,
+  ): Promise<DocumentPreviewResponse> {
+    return apiClient.get<DocumentPreviewResponse>(
+      `/documents/${documentId}/preview`,
+      { token },
+    );
   },
 
   async getStats(token: string): Promise<DocumentStats> {

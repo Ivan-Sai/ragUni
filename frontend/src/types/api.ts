@@ -113,6 +113,18 @@ export interface ChatSource {
   total_chunks: number;
   text: string;
   score?: number;
+  /** ID of the parent document — lets the UI fetch the full preview. */
+  document_id?: string;
+  /** PDF page number recovered from the chunk's position in the source. */
+  page?: number;
+}
+
+export interface DocumentPreviewResponse {
+  id: string;
+  filename: string;
+  file_type: string;
+  total_chunks: number;
+  text: string;
 }
 
 export interface ChatMessage {

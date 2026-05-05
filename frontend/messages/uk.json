@@ -122,7 +122,24 @@
     "sources": {
       "title": "Джерела ({count})",
       "chunk": "Частина ",
-      "chunkOf": " з {total}"
+      "chunkOf": " з {total}",
+      "fragmentCount": "{count} фрагм.",
+      "pageRef": "стор. {page}",
+      "chunkRef": "фрагмент {chunk}",
+      "pageAndChunk": "стор. {page} · фрагмент {chunk}",
+      "chunkOnly": "фрагмент {chunk}",
+      "ofTotal": " з {total}",
+      "copyCitation": "Скопіювати посилання",
+      "openDocument": "Відкрити документ",
+      "copied": "Скопійовано",
+      "copyFailed": "Не вдалося скопіювати",
+      "noSourcesWarning": "Відповідь сформовано без посилань на документи — перевірте інформацію в офіційному джерелі."
+    },
+    "preview": {
+      "title": "Перегляд документа",
+      "loading": "Завантаження...",
+      "loadError": "Не вдалося завантажити документ",
+      "info": "{type} · {chunks} фрагментів"
     },
     "errors": {
       "serverError": "Помилка сервера під час відповіді",

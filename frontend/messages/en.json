@@ -122,7 +122,24 @@
     "sources": {
       "title": "Sources ({count})",
       "chunk": "Part ",
-      "chunkOf": " of {total}"
+      "chunkOf": " of {total}",
+      "fragmentCount": "{count} frag.",
+      "pageRef": "p. {page}",
+      "chunkRef": "fragment {chunk}",
+      "pageAndChunk": "p. {page} · fragment {chunk}",
+      "chunkOnly": "fragment {chunk}",
+      "ofTotal": " of {total}",
+      "copyCitation": "Copy citation",
+      "openDocument": "Open document",
+      "copied": "Copied",
+      "copyFailed": "Could not copy",
+      "noSourcesWarning": "The answer was generated without document citations — verify the information in the official source."
+    },
+    "preview": {
+      "title": "Document preview",
+      "loading": "Loading...",
+      "loadError": "Could not load document",
+      "info": "{type} · {chunks} fragments"
     },
     "errors": {
       "serverError": "Server error during response",

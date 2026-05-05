@@ -7,10 +7,10 @@ import remarkGfm from "remark-gfm";
 import { User, Bot, ThumbsUp, ThumbsDown } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
-import { SourceCitation } from "./source-citation";
+import { NoSourcesWarning, SourceCitation } from "./source-citation";
 import { Button } from "@/components/ui/button";
 import { chatApi } from "@/lib/api";
-import type { ChatMessage } from "@/types/api";
+import type { ChatMessage, ChatSource } from "@/types/api";
 
 // Allowed HTML elements for markdown rendering (XSS protection)
 const ALLOWED_ELEMENTS = [
@@ -18,6 +18,24 @@ const ALLOWED_ELEMENTS = [
   "ul", "ol", "li", "blockquote", "code", "pre", "a", "table", "thead",
   "tbody", "tr", "th", "td", "hr", "sup", "sub",
 ];
+
+/**
+ * Replace `[N]` markers in the assistant's answer with markdown links
+ * pointing to anchors generated for each source. The link's href uses
+ * the format `#src-N`; the SourceCitation component renders matching
+ * anchor ids on each numbered group, so a click scrolls the user to
+ * the corresponding card. We escape regex meta-characters and skip
+ * markers whose number is out of range so a hallucinated `[42]` does
+ * not produce a dead link.
+ */
+function linkifyCitations(content: string, sourceCount: number): string {
+  if (!sourceCount) return content;
+  return content.replace(/\[(\d+)\]/g, (match, raw: string) => {
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 1 || n > sourceCount) return match;
+    return `[\\[${n}\\]](#src-${n})`;
+  });
+}
 
 interface ChatMessageBubbleProps {
   message: ChatMessage;
@@ -33,8 +51,10 @@ export function ChatMessageBubble({
   const { data: session } = useSession();
   const t = useTranslations("chat.messages");
   const isUser = message.role === "user";
-  const hasSources =
-    !isUser && message.sources && message.sources.length > 0;
+  const sources: ChatSource[] = message.sources ?? [];
+  const hasSources = !isUser && sources.length > 0;
+  const showNoSourcesWarning =
+    !isUser && sources.length === 0 && message.content.trim().length > 0;
   const [feedback, setFeedback] = useState<"thumbs_up" | "thumbs_down" | null>(
     null
   );
@@ -101,24 +121,51 @@ export function ChatMessageBubble({
               allowedElements={ALLOWED_ELEMENTS}
               unwrapDisallowed
               components={{
-                a: ({ href, children, ...props }) => (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer nofollow"
-                    {...props}
-                  >
-                    {children}
-                  </a>
-                ),
+                a: ({ href, children, ...props }) => {
+                  // Internal citation links scroll to the source card
+                  // instead of opening a new tab.
+                  const isCitation = href?.startsWith("#src-");
+                  if (isCitation) {
+                    return (
+                      <a
+                        href={href}
+                        className="font-semibold text-primary hover:underline no-underline mx-0.5"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          const target = document.querySelector(
+                            href as string,
+                          );
+                          target?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "center",
+                          });
+                        }}
+                        {...props}
+                      >
+                        {children}
+                      </a>
+                    );
+                  }
+                  return (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer nofollow"
+                      {...props}
+                    >
+                      {children}
+                    </a>
+                  );
+                },
               }}
             >
-              {message.content}
+              {linkifyCitations(message.content, sources.length)}
             </ReactMarkdown>
           </div>
         )}
 
-        {hasSources && <SourceCitation sources={message.sources} />}
+        {hasSources && <SourceCitation sources={sources} />}
+        {showNoSourcesWarning && <NoSourcesWarning />}
 
         {canFeedback && (
           <div className="mt-2 flex gap-1">
