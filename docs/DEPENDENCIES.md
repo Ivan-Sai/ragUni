@@ -48,11 +48,24 @@ mark the transition as a major release.
 
 ### Optional: `@sentry/nextjs`
 
-The `frontend/src/lib/sentry.ts` helper loads `@sentry/nextjs` via a
-dynamic `import()`. The package is **not** currently listed in
-`package.json` — add it (and optionally wrap the build with
-`withSentryConfig`) only when enabling Sentry in a specific deployment.
-The rest of the app is unaffected by its absence.
+Frontend Sentry instrumentation is **not** wired by default. TypeScript
+strict-build refuses an `import("@sentry/nextjs")` against a missing
+package, and skipping the type check is forbidden by the project's
+"no `@ts-expect-error`" rule, so we deliberately leave Sentry out of the
+codebase until it is actively used.
+
+To enable Sentry on the frontend in a specific deployment:
+
+1. `npm install --save @sentry/nextjs` in `frontend/`.
+2. Run `npx @sentry/wizard@latest -i nextjs` to scaffold the standard
+   `sentry.client.config.ts`, `sentry.server.config.ts`,
+   `sentry.edge.config.ts`, and `instrumentation.ts` files.
+3. Set `NEXT_PUBLIC_SENTRY_DSN` and `SENTRY_AUTH_TOKEN` in the build
+   environment.
+4. Wrap `next.config.ts` with `withSentryConfig` per the wizard output.
+
+The backend already uses the corresponding Python SDK (`sentry-sdk`) —
+see `app/core/observability.py`, opt-in via `SENTRY_DSN`.
 
 ## Upgrade cadence
 

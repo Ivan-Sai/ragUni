@@ -4,7 +4,6 @@ import "./globals.css";
 import { AuthSessionProvider } from "@/components/providers/session-provider";
 import { SessionGuard } from "@/components/providers/session-guard";
 import { ThemeProvider } from "@/components/providers/theme-provider";
-import { SentryProvider } from "@/components/providers/sentry-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Toaster } from "sonner";
@@ -39,20 +38,18 @@ export default async function RootLayout({
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
       >
-        <SentryProvider>
-          <AuthSessionProvider>
-            <SessionGuard>
-              <NextIntlClientProvider messages={messages}>
-                <ThemeProvider>
-                  <ErrorBoundary>
-                    <TooltipProvider>{children}</TooltipProvider>
-                  </ErrorBoundary>
-                  <Toaster richColors position="top-right" />
-                </ThemeProvider>
-              </NextIntlClientProvider>
-            </SessionGuard>
-          </AuthSessionProvider>
-        </SentryProvider>
+        <AuthSessionProvider>
+          <SessionGuard>
+            <NextIntlClientProvider messages={messages}>
+              <ThemeProvider>
+                <ErrorBoundary>
+                  <TooltipProvider>{children}</TooltipProvider>
+                </ErrorBoundary>
+                <Toaster richColors position="top-right" />
+              </ThemeProvider>
+            </NextIntlClientProvider>
+          </SessionGuard>
+        </AuthSessionProvider>
       </body>
     </html>
   );
