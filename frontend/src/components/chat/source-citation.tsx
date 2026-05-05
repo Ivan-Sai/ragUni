@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { useMemo, useState } from "react";
 import {
   ChevronDown,
@@ -26,12 +27,20 @@ interface SourceCitationProps {
   sources: ChatSource[];
 }
 
+interface IndexedSource extends ChatSource {
+  /** Original 1-based index in the LLM context — drives [N] anchor ids. */
+  citationIndex: number;
+}
+
 interface GroupedSource {
   source_file: string;
   file_type: string;
   document_id?: string;
   topScore: number;
-  chunks: ChatSource[];
+  chunks: IndexedSource[];
+  /** Smallest citation index across the group's chunks — used to label the
+   * card header with the lowest-numbered citation pointing at this file. */
+  primaryIndex: number;
 }
 
 function FileIcon({
@@ -56,16 +65,24 @@ function FileIcon({
 /**
  * Group raw chunks by source_file so the user sees one card per
  * document with N expanded fragments inside, instead of N separate
- * cards for the same PDF.
+ * cards for the same PDF. Each chunk keeps its 1-based citation index
+ * (matching the [N] markers the LLM emitted) so anchor links survive
+ * the regrouping.
  */
 function groupSources(sources: ChatSource[]): GroupedSource[] {
+  const indexed: IndexedSource[] = sources.map((s, i) => ({
+    ...s,
+    citationIndex: i + 1,
+  }));
+
   const map = new Map<string, GroupedSource>();
-  for (const s of sources) {
+  for (const s of indexed) {
     const existing = map.get(s.source_file);
     const score = s.score ?? 0;
     if (existing) {
       existing.chunks.push(s);
       existing.topScore = Math.max(existing.topScore, score);
+      existing.primaryIndex = Math.min(existing.primaryIndex, s.citationIndex);
       if (!existing.document_id && s.document_id) {
         existing.document_id = s.document_id;
       }
@@ -75,16 +92,21 @@ function groupSources(sources: ChatSource[]): GroupedSource[] {
         file_type: s.file_type,
         document_id: s.document_id,
         topScore: score,
+        primaryIndex: s.citationIndex,
         chunks: [s],
       });
     }
   }
-  // Sort each group's chunks by score (highest first), then sort the
-  // groups by their best chunk's score.
+  // Sort each group's chunks by their original citation index so the
+  // expanded card lists chunks in the same order the LLM cited them.
   for (const group of map.values()) {
-    group.chunks.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+    group.chunks.sort((a, b) => a.citationIndex - b.citationIndex);
   }
-  return Array.from(map.values()).sort((a, b) => b.topScore - a.topScore);
+  // Outer sort: by primary citation index so the card numbered with the
+  // lowest [N] appears first, mirroring the order in the answer.
+  return Array.from(map.values()).sort(
+    (a, b) => a.primaryIndex - b.primaryIndex,
+  );
 }
 
 function SourceGroup({
@@ -99,6 +121,20 @@ function SourceGroup({
   const t = useTranslations("chat.sources");
   const [open, setOpen] = useState(index === 0); // first group expanded
 
+  // Listen for hash-driven anchor jumps so a click on [N] in the answer
+  // expands the right card before the browser scrolls to it.
+  React.useEffect(() => {
+    function handleAnchor(event: Event) {
+      const detail = (event as CustomEvent<{ index: number }>).detail;
+      if (!detail) return;
+      if (group.chunks.some((c) => c.citationIndex === detail.index)) {
+        setOpen(true);
+      }
+    }
+    window.addEventListener("citation-jump", handleAnchor);
+    return () => window.removeEventListener("citation-jump", handleAnchor);
+  }, [group.chunks]);
+
   async function copyCitation(chunk: ChatSource) {
     const parts = [chunk.source_file];
     if (chunk.page) parts.push(t("pageRef", { page: chunk.page }));
@@ -112,14 +148,18 @@ function SourceGroup({
     }
   }
 
+  // Build the label that appears in the small badge: either a single
+  // [N] or a range like [2-5] when several citations share this file.
+  const indexLabel =
+    group.chunks.length === 1
+      ? `${group.chunks[0].citationIndex}`
+      : `${group.chunks[0].citationIndex}-${group.chunks[group.chunks.length - 1].citationIndex}`;
+
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger
-        id={`src-${index + 1}`}
-        className="flex w-full items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-xs hover:bg-muted transition-colors scroll-mt-20"
-      >
-        <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded bg-primary/10 text-[10px] font-semibold text-primary">
-          {index + 1}
+      <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-xs hover:bg-muted transition-colors scroll-mt-20">
+        <span className="inline-flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded bg-primary/10 px-1 text-[10px] font-semibold text-primary">
+          {indexLabel}
         </span>
         <FileIcon
           type={group.file_type}
@@ -152,8 +192,14 @@ function SourceGroup({
             return (
               <div
                 key={`${chunk.source_file}-${chunk.chunk_index}-${i}`}
-                className="rounded-md border bg-muted/30 px-3 py-2"
+                id={`src-${chunk.citationIndex}`}
+                className="rounded-md border bg-muted/30 px-3 py-2 scroll-mt-20 target:bg-primary/5 target:ring-1 target:ring-primary/40"
               >
+                <div className="mb-1 flex items-center gap-1.5">
+                  <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded bg-primary/15 px-1 text-[10px] font-semibold text-primary">
+                    {chunk.citationIndex}
+                  </span>
+                </div>
                 <p className="text-xs text-muted-foreground whitespace-pre-wrap break-words">
                   {chunk.text}
                 </p>

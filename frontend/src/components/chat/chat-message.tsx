@@ -122,8 +122,9 @@ export function ChatMessageBubble({
               unwrapDisallowed
               components={{
                 a: ({ href, children, ...props }) => {
-                  // Internal citation links scroll to the source card
-                  // instead of opening a new tab.
+                  // Internal citation links broadcast a "citation-jump"
+                  // event so the matching source card auto-expands,
+                  // then scroll to the chunk anchor inside it.
                   const isCitation = href?.startsWith("#src-");
                   if (isCitation) {
                     return (
@@ -132,12 +133,27 @@ export function ChatMessageBubble({
                         className="font-semibold text-primary hover:underline no-underline mx-0.5"
                         onClick={(e) => {
                           e.preventDefault();
-                          const target = document.querySelector(
-                            href as string,
+                          const idx = Number(
+                            (href as string).replace("#src-", ""),
                           );
-                          target?.scrollIntoView({
-                            behavior: "smooth",
-                            block: "center",
+                          if (Number.isInteger(idx)) {
+                            window.dispatchEvent(
+                              new CustomEvent("citation-jump", {
+                                detail: { index: idx },
+                              }),
+                            );
+                          }
+                          // Wait one frame for the parent group to
+                          // expand before scrolling, otherwise the
+                          // anchor may not be in the layout yet.
+                          requestAnimationFrame(() => {
+                            const target = document.querySelector(
+                              href as string,
+                            );
+                            target?.scrollIntoView({
+                              behavior: "smooth",
+                              block: "center",
+                            });
                           });
                         }}
                         {...props}

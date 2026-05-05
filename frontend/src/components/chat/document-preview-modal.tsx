@@ -96,11 +96,11 @@ export function DocumentPreviewModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+      <DialogContent className="max-w-5xl w-[min(95vw,72rem)] max-h-[85vh] flex flex-col gap-3">
+        <DialogHeader className="space-y-1">
+          <DialogTitle className="flex items-center gap-2 pr-8">
             <FileIcon type={doc?.file_type ?? "txt"} className="h-5 w-5" />
-            {doc?.filename ?? t("title")}
+            <span className="truncate">{doc?.filename ?? t("title")}</span>
           </DialogTitle>
           <DialogDescription>
             {doc
@@ -112,23 +112,85 @@ export function DocumentPreviewModal({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 rounded border bg-muted/30 px-3 py-2">
-          {loading ? (
-            <div className="flex items-center justify-center py-12 text-muted-foreground">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              {t("loading")}
-            </div>
-          ) : error ? (
-            <p className="py-12 text-center text-sm text-destructive">
-              {error}
-            </p>
-          ) : doc ? (
-            <DocumentBody text={doc.text} highlight={highlight ?? null} />
-          ) : null}
+        <ScrollArea className="flex-1 min-h-0 rounded border bg-muted/30">
+          <div className="px-4 py-3">
+            {loading ? (
+              <div className="flex items-center justify-center py-12 text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {t("loading")}
+              </div>
+            ) : error ? (
+              <p className="py-12 text-center text-sm text-destructive">
+                {error}
+              </p>
+            ) : doc ? (
+              <DocumentBody text={doc.text} highlight={highlight ?? null} />
+            ) : null}
+          </div>
         </ScrollArea>
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * Find the highlight inside the document body using a robust prefix
+ * match. The chunk preview was truncated to ~350 chars at a sentence
+ * boundary and ends in "…", so we strip trailing punctuation, take a
+ * stable prefix (first 60 chars after collapsing whitespace), and
+ * search case-insensitively. If the prefix isn't found we render the
+ * body unchanged — better than highlighting the wrong span.
+ */
+function findHighlightRange(
+  text: string,
+  highlight: string,
+): { start: number; end: number } | null {
+  const cleaned = highlight.replace(/[…\.\s]+$/g, "").trim();
+  if (cleaned.length < 8) return null;
+
+  const probeLen = Math.min(60, cleaned.length);
+  const probe = cleaned.slice(0, probeLen).toLowerCase();
+  const haystack = text.toLowerCase();
+
+  // Try a direct match first.
+  let start = haystack.indexOf(probe);
+  if (start === -1) {
+    // Collapse all whitespace to single spaces in both strings and try
+    // again — chunking sometimes normalises whitespace differently
+    // from the original document body.
+    const normalisedHaystack = haystack.replace(/\s+/g, " ");
+    const normalisedProbe = probe.replace(/\s+/g, " ");
+    const normalisedStart = normalisedHaystack.indexOf(normalisedProbe);
+    if (normalisedStart === -1) return null;
+    // Translate the index back into the original (non-normalised) text.
+    let consumed = 0;
+    for (let i = 0; i < text.length; i++) {
+      if (consumed === normalisedStart) {
+        start = i;
+        break;
+      }
+      const ch = text[i];
+      if (/\s/.test(ch)) {
+        if (i + 1 < text.length && /\s/.test(text[i + 1])) continue;
+        consumed += 1;
+      } else {
+        consumed += 1;
+      }
+    }
+    if (start === -1) return null;
+  }
+
+  // Extend the range to roughly the chunk length, but cap at the next
+  // paragraph boundary so the highlight doesn't bleed past the end of
+  // the cited fragment.
+  const tentativeEnd = Math.min(start + cleaned.length, text.length);
+  const paraBreak = text.indexOf("\n\n", start + 40);
+  const end =
+    paraBreak !== -1 && paraBreak < tentativeEnd + 200
+      ? paraBreak
+      : tentativeEnd;
+
+  return { start, end };
 }
 
 function DocumentBody({
@@ -138,43 +200,30 @@ function DocumentBody({
   text: string;
   highlight: string | null;
 }) {
-  if (!highlight) {
+  const range = highlight ? findHighlightRange(text, highlight) : null;
+
+  if (!range) {
     return (
-      <pre className="whitespace-pre-wrap break-words text-sm font-sans">
+      <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
         {text}
-      </pre>
+      </div>
     );
   }
 
-  // Strip the trailing ellipsis the source preview adds and look for the
-  // longest stable prefix in the document body.
-  const trimmed = highlight.replace(/[…\.]+$/g, "").trim();
-  const probe = trimmed.length > 80 ? trimmed.slice(0, 80) : trimmed;
-  const idx = probe ? text.toLowerCase().indexOf(probe.toLowerCase()) : -1;
-
-  if (idx === -1) {
-    return (
-      <pre className="whitespace-pre-wrap break-words text-sm font-sans">
-        {text}
-      </pre>
-    );
-  }
-
-  const matchEnd = idx + (trimmed.length || probe.length);
-  const before = text.slice(0, idx);
-  const middle = text.slice(idx, matchEnd);
-  const after = text.slice(matchEnd);
+  const before = text.slice(0, range.start);
+  const middle = text.slice(range.start, range.end);
+  const after = text.slice(range.end);
 
   return (
-    <pre className="whitespace-pre-wrap break-words text-sm font-sans">
+    <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
       {before}
       <mark
         data-source-highlight
-        className="rounded bg-yellow-200 px-1 dark:bg-yellow-900/60"
+        className="rounded bg-yellow-200 px-1 py-0.5 dark:bg-yellow-900/60 dark:text-yellow-50"
       >
         {middle}
       </mark>
       {after}
-    </pre>
+    </div>
   );
 }
