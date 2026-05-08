@@ -273,8 +273,13 @@ async def fetch_structured_records(
 
     access_filter = _build_document_access_filter(user_role, user_faculty_id)
 
+    # Any document with at least one structured record qualifies —
+    # the extraction_method label evolved over time (``llm``,
+    # ``schedule_llm``, ``schedule_deterministic`` and any future
+    # value the universal pipeline introduces) and gating on it
+    # silently dropped pre-attributed schedule cells from the
+    # deterministic parser.
     filter_doc: dict[str, Any] = {
-        "extraction_method": "llm",
         "structured_records_count": {"$gt": 0},
     }
     if access_filter:

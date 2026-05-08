@@ -230,7 +230,7 @@ class TestRunRagChain:
             assert result["grounded"] is False
             assert result["sources"] == []
             assert result["docs"] == []
-            assert "немає інформації" in result["answer"]
+            assert "переформулювати" in result["answer"]
 
     @pytest.mark.asyncio
     async def test_student_access_filter(self):
