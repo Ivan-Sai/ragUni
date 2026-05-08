@@ -61,7 +61,18 @@ class AtlasIndexManager:
                 path="embedding",
                 dimensions=vector_dimension,
                 similarity="cosine",
-                filters=["access_level", "faculty", "source_file"],
+                # Every metadata path used by build_access_filter must
+                # be declared here — Atlas Vector Search rejects any
+                # pre_filter that touches an unindexed field.
+                filters=[
+                    "access_level",
+                    "faculty_id",
+                    "source_file",
+                    "target_group_ids",
+                    "target_years",
+                    "target_level",
+                    "doc_type",
+                ],
                 wait_until_complete=120.0 if wait_for_ready else None,
             )
             logger.info("Vector search index '%s' created", index_name)

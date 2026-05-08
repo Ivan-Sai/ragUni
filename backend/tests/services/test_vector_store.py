@@ -14,7 +14,7 @@ class TestAccessFilter:
         assert result == {}
 
     def test_admin_with_faculty_still_sees_everything(self):
-        result = VectorStoreService.build_access_filter("admin", "CS")
+        result = VectorStoreService.build_access_filter("admin", user_faculty_id="cs-id")
         assert result == {}
 
     def test_student_without_faculty_sees_public_only(self):
@@ -22,18 +22,45 @@ class TestAccessFilter:
         assert result == {"$or": [{"access_level": "public"}]}
 
     def test_student_with_faculty_sees_public_and_faculty(self):
-        result = VectorStoreService.build_access_filter("student", "CS")
+        result = VectorStoreService.build_access_filter(
+            "student", user_faculty_id="cs-id"
+        )
+        # No audience fields set → access-only filter, identical to before.
         assert "$or" in result
         conditions = result["$or"]
         assert {"access_level": "public"} in conditions
-        # Faculty condition
         faculty_cond = [c for c in conditions if "$and" in c]
         assert len(faculty_cond) == 1
         assert {"access_level": "faculty"} in faculty_cond[0]["$and"]
-        assert {"faculty": "CS"} in faculty_cond[0]["$and"]
+        assert {"faculty_id": "cs-id"} in faculty_cond[0]["$and"]
+
+    def test_student_with_audience_adds_hard_filter(self):
+        """Setting student group/year/level wraps the access filter in $and."""
+        result = VectorStoreService.build_access_filter(
+            "student",
+            user_faculty_id="cs-id",
+            user_group_id="grp-1",
+            user_year=4,
+            user_level="bachelor",
+        )
+        assert "$and" in result
+        clauses = result["$and"]
+        # First clause is the access filter, the rest are audience clauses.
+        access = clauses[0]
+        assert "$or" in access
+        # Group / year / level clauses each accept the user's value
+        # OR an empty list / missing field.
+        group_clause = next(c for c in clauses[1:] if "target_group_ids" in str(c))
+        assert {"target_group_ids": "grp-1"} in group_clause["$or"]
+        year_clause = next(c for c in clauses[1:] if "target_years" in str(c))
+        assert {"target_years": 4} in year_clause["$or"]
+        level_clause = next(c for c in clauses[1:] if "target_level" in str(c))
+        assert {"target_level": "bachelor"} in level_clause["$or"]
 
     def test_teacher_sees_public_restricted_and_faculty(self):
-        result = VectorStoreService.build_access_filter("teacher", "Math")
+        result = VectorStoreService.build_access_filter(
+            "teacher", user_faculty_id="math-id"
+        )
         conditions = result["$or"]
         assert {"access_level": "public"} in conditions
         assert {"access_level": "restricted"} in conditions
@@ -46,6 +73,20 @@ class TestAccessFilter:
         assert {"access_level": "public"} in conditions
         assert {"access_level": "restricted"} in conditions
         assert len(conditions) == 2  # no faculty condition
+
+    def test_teacher_audience_fields_are_ignored(self):
+        """Teachers/admins skip the audience filter even when their profile
+        carries group/year info — they help students across groups."""
+        result = VectorStoreService.build_access_filter(
+            "teacher",
+            user_faculty_id="math-id",
+            user_group_id="grp-1",
+            user_year=4,
+            user_level="bachelor",
+        )
+        # Plain $or, no $and wrapping.
+        assert "$or" in result
+        assert "$and" not in result
 
 
 class TestChunking:

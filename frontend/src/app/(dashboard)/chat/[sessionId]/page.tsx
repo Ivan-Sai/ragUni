@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useChat } from "@/hooks/use-chat";
 import { ChatMessageList } from "@/components/chat/chat-message-list";
 import { ChatInput } from "@/components/chat/chat-input";
+import { PersonalizationBanner } from "@/components/chat/personalization-banner";
 
 export default function ChatSessionPage() {
   const params = useParams<{ sessionId: string }>();
@@ -18,15 +19,20 @@ export default function ChatSessionPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] -m-6">
-      <ChatMessageList messages={messages} isLoading={isLoading} sessionId={sessionId} />
+      <PersonalizationBanner />
+      <div className="flex-1 min-h-0 flex flex-col">
+        <ChatMessageList messages={messages} isLoading={isLoading} sessionId={sessionId} />
+      </div>
 
       {error && (
-        <div className="px-4 py-2 text-sm text-destructive bg-destructive/10 border-t">
+        <div className="px-4 py-2 text-sm text-destructive bg-destructive/10 border-t shrink-0">
           {error}
         </div>
       )}
 
-      <ChatInput onSend={sendMessage} isLoading={isLoading} />
+      <div className="shrink-0 border-t bg-background sticky bottom-0">
+        <ChatInput onSend={sendMessage} isLoading={isLoading} />
+      </div>
     </div>
   );
 }

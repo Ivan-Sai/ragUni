@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { documentsApi } from "@/lib/api";
-import type { DocumentInfo } from "@/types/api";
+import type { DocumentInfo, DocumentUploadOptions } from "@/types/api";
 
 interface UseAdminDocumentsOptions {
   token: string;
@@ -16,7 +16,10 @@ interface UseAdminDocumentsReturn {
   isLoading: boolean;
   isUploading: boolean;
   error: string | null;
-  uploadDocument: (file: File) => Promise<void>;
+  uploadDocument: (
+    file: File,
+    options: DocumentUploadOptions,
+  ) => Promise<void>;
   deleteDocument: (documentId: string) => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -54,17 +57,22 @@ export function useAdminDocuments({
   }, [fetchDocuments]);
 
   const uploadDocument = useCallback(
-    async (file: File) => {
+    async (file: File, options: DocumentUploadOptions) => {
       setIsUploading(true);
       setError(null);
 
       try {
-        const result = await documentsApi.upload(file, token);
+        const result = await documentsApi.upload(file, token, options);
         setDocuments((prev) => [
           {
             id: result.id,
             filename: result.filename,
             file_type: result.file_type,
+            access_level: result.access_level,
+            faculty_id: result.faculty_id,
+            target_group_ids: result.target_group_ids,
+            target_years: result.target_years,
+            target_level: result.target_level,
             uploaded_at: result.uploaded_at,
             total_chunks: result.total_chunks,
           },
@@ -74,7 +82,13 @@ export function useAdminDocuments({
         toast.success(t("success"));
       } catch (err) {
         setError(err instanceof Error ? err.message : t("errorDescription"));
-        toast.error(t("errorDescription"));
+        // Surface the backend's reason on the toast (server already
+        // localises 4xx detail messages to the user's language).
+        toast.error(
+          err instanceof Error && err.message
+            ? err.message
+            : t("errorDescription"),
+        );
         throw err;
       } finally {
         setIsUploading(false);

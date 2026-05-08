@@ -32,6 +32,25 @@ settings = get_settings()
 _VALID_ROLES = {"student", "teacher", "admin"}
 
 
+class _E5PrefixedEmbeddings(FastEmbedEmbeddings):
+    """FastEmbed wrapper that adds the E5 instruction prefixes.
+
+    The intfloat/multilingual-e5-* family was trained with explicit
+    role markers: ``query:`` for user queries and ``passage:`` for the
+    documents being indexed. Without these prefixes cosine scores
+    cluster very tightly (~0.88-0.92 across topical and off-topic
+    chunks alike), which destroys the ranking signal — adding them
+    restores ~0.6-0.95 spread on the same data. Cheap to apply, hard
+    to undo without a reindex, so do it once and stick with it.
+    """
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return super().embed_documents([f"passage: {t}" for t in texts])
+
+    def embed_query(self, text: str) -> list[float]:
+        return super().embed_query(f"query: {text}")
+
+
 class VectorStoreService:
     """LangChain-powered vector store with MongoDB Atlas Vector Search."""
 
@@ -62,8 +81,11 @@ class VectorStoreService:
             self._client = MongoClient(settings.mongodb_url)
             self._collection = self._client[settings.mongodb_db_name]["document_chunks"]
 
-            logger.info("Loading embedding model: %s", settings.embedding_model)
-            self._embeddings = FastEmbedEmbeddings(
+            logger.info(
+                "Loading embedding model: %s (E5 prefix-aware)",
+                settings.embedding_model,
+            )
+            self._embeddings = _E5PrefixedEmbeddings(
                 model_name=settings.embedding_model,
             )
 
@@ -110,43 +132,112 @@ class VectorStoreService:
     @staticmethod
     def build_access_filter(
         user_role: str = "student",
-        user_faculty: Optional[str] = None,
+        user_faculty_id: Optional[str] = None,
+        user_group_id: Optional[str] = None,
+        user_year: Optional[int] = None,
+        user_level: Optional[str] = None,
+        target_doc_types: Optional[list[str]] = None,
     ) -> dict[str, Any]:
-        """Build a MongoDB pre_filter based on user role and faculty.
+        """Build a MongoDB pre_filter for Atlas Vector Search.
 
-        Access levels:
-        - public: visible to everyone
-        - faculty: visible to users of the same faculty + teachers/admins
-        - restricted: visible to teachers and admins only
+        Two layers run in series:
+
+        1. **Access** — by role and faculty. Public is visible to all,
+           faculty-scoped is visible to its faculty (+ teachers/admins),
+           restricted is visible to teachers/admins only.
+        2. **Audience** — for students only. A chunk passes if its
+           ``target_group_ids`` contains the user's group OR is empty
+           (= "for all groups"); same logic for ``target_years`` and
+           ``target_level``. Empty list / null on a chunk means "no
+           constraint on this dimension".
+
+        Teachers and admins are exempt from the audience layer. They
+        help students across groups and need to see every record.
         """
         # Validate role
         if user_role not in _VALID_ROLES:
             logger.warning("Unknown role '%s', defaulting to student access", user_role)
             user_role = "student"
 
+        # ---- Access layer -------------------------------------------------
         if user_role == "admin":
-            # Admins see everything
-            return {}
-
-        if user_role == "teacher":
-            # Teachers see public + restricted + their faculty docs
+            access_filter: dict[str, Any] = {}
+        elif user_role == "teacher":
             conditions: list[dict] = [
                 {"access_level": "public"},
                 {"access_level": "restricted"},
             ]
-            if user_faculty:
+            if user_faculty_id:
                 conditions.append(
-                    {"$and": [{"access_level": "faculty"}, {"faculty": user_faculty}]}
+                    {"$and": [{"access_level": "faculty"}, {"faculty_id": user_faculty_id}]}
                 )
-            return {"$or": conditions}
+            access_filter = {"$or": conditions}
+        else:
+            # Students: public + own-faculty.
+            conditions = [{"access_level": "public"}]
+            if user_faculty_id:
+                conditions.append(
+                    {"$and": [{"access_level": "faculty"}, {"faculty_id": user_faculty_id}]}
+                )
+            access_filter = {"$or": conditions}
 
-        # Students: public + their own faculty docs
-        conditions = [{"access_level": "public"}]
-        if user_faculty:
-            conditions.append(
-                {"$and": [{"access_level": "faculty"}, {"faculty": user_faculty}]}
+        # Teachers and admins skip the audience filter, but they
+        # still benefit from doc_type narrowing when the analyzer
+        # asked for it.
+        if user_role != "student":
+            if target_doc_types:
+                doc_type_clause = {"doc_type": {"$in": list(target_doc_types)}}
+                if access_filter:
+                    return {"$and": [access_filter, doc_type_clause]}
+                return doc_type_clause
+            return access_filter
+
+        # ---- Audience layer (students only) -------------------------------
+        # Atlas Vector Search ``pre_filter`` only accepts a small set of
+        # operators (equals, in, range, exists, all) — ``$size`` is NOT
+        # one of them. To express "target list is empty" we drop the
+        # field from chunk metadata at write time and check
+        # ``$exists: false`` here. Equality on an array field is
+        # interpreted by MongoDB as element-match, so ``target_group_ids:
+        # <user_group_id>`` matches any chunk whose array contains it.
+        audience_clauses: list[dict] = []
+
+        if user_group_id:
+            audience_clauses.append({
+                "$or": [
+                    {"target_group_ids": user_group_id},
+                    {"target_group_ids": {"$exists": False}},
+                ]
+            })
+
+        if user_year is not None:
+            audience_clauses.append({
+                "$or": [
+                    {"target_years": user_year},
+                    {"target_years": {"$exists": False}},
+                ]
+            })
+
+        if user_level:
+            audience_clauses.append({
+                "$or": [
+                    {"target_level": user_level},
+                    {"target_level": {"$exists": False}},
+                ]
+            })
+
+        if target_doc_types:
+            audience_clauses.append(
+                {"doc_type": {"$in": list(target_doc_types)}}
             )
-        return {"$or": conditions}
+
+        if not audience_clauses:
+            return access_filter
+
+        if not access_filter:
+            return {"$and": audience_clauses} if len(audience_clauses) > 1 else audience_clauses[0]
+
+        return {"$and": [access_filter, *audience_clauses]}
 
     # ------------------------------------------------------------------
     # Chunking
