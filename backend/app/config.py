@@ -44,7 +44,13 @@ class Settings(BaseSettings):
     # Vector Search Configuration
     vector_index_name: str = "vector_index"
     fulltext_index_name: str = "text_index"
-    use_hybrid_search: bool = True
+    # Hybrid (vector + Atlas full-text RRF) buys recall but its rank
+    # fusion does not preserve cosine scores and can demote a perfectly
+    # on-topic document below others that happen to share generic
+    # vocabulary. Vector-only is more consistent on the small university
+    # corpus — flip this on per-deployment if the full-text index is
+    # tuned for the domain.
+    use_hybrid_search: bool = False
     vector_score_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
     # Below this threshold the answer is considered ungrounded — we tell the
     # user "no relevant information found" rather than letting the LLM
@@ -68,7 +74,12 @@ class Settings(BaseSettings):
     # Application Settings
     max_upload_size: int = 10 * 1024 * 1024  # 10MB
     max_extracted_text_size: int = 50 * 1024 * 1024  # 50MB
-    top_k_results: int = 5
+    # Top-k chunks returned to the LLM. We bumped from 5 → 20 because
+    # LLM-extracted records each become a separate one-line chunk
+    # (one schedule row per chunk), and the typical class-schedule
+    # PDF has 30-40 records — top-5 used to cover only Mon-morning
+    # slots, so Thursday questions came back as "no information".
+    top_k_results: int = 20
 
     # LLM Settings
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)

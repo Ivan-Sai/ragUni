@@ -28,7 +28,10 @@ fastembed==0.7.4
 openai==2.26.0
 
 # Document Processing
-PyPDF2==3.0.1
+# pdfplumber preserves table structure (multi-row headers + cell columns)
+# which our exam-schedule / grade-sheet PDFs rely on. PyPDF2 was the
+# previous parser but flattened tables into ungrouped runs of text.
+pdfplumber==0.11.4
 python-docx==1.1.2
 pandas==3.0.1
 openpyxl==3.1.5

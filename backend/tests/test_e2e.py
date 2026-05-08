@@ -11,6 +11,10 @@ from datetime import datetime, timezone
 from httpx import AsyncClient, ASGITransport
 
 
+SAMPLE_FACULTY_ID = "507f1f77bcf86cd7994390ff"
+SAMPLE_GROUP_ID = "507f1f77bcf86cd7994390fe"
+
+
 @pytest.fixture
 def mock_user_doc():
     """A user document as it would appear in MongoDB."""
@@ -22,9 +26,10 @@ def mock_user_doc():
         "hashed_password": hash_password("TestPass123!"),
         "full_name": "Тест Студент",
         "role": "student",
-        "faculty": "CS",
-        "group": "КН-41",
+        "faculty_id": ObjectId(SAMPLE_FACULTY_ID),
+        "group_id": ObjectId(SAMPLE_GROUP_ID),
         "year": 4,
+        "level": "bachelor",
         "department": None,
         "position": None,
         "is_approved": True,
@@ -45,7 +50,7 @@ def mock_admin_doc():
         "hashed_password": hash_password("AdminPass123!"),
         "full_name": "Адмін",
         "role": "admin",
-        "faculty": "CS",
+        "faculty_id": ObjectId(SAMPLE_FACULTY_ID),
         "is_approved": True,
         "is_active": True,
         "created_at": datetime.now(timezone.utc),
@@ -77,10 +82,25 @@ def mock_db_collections():
     feedback = MagicMock()
     feedback.delete_many = AsyncMock()
 
+    # Reference dictionaries — pre-stocked so register and document
+    # upload validators see consistent faculty/group entries.
+    faculties = MagicMock()
+    faculties.find_one = AsyncMock(return_value={"_id": ObjectId(SAMPLE_FACULTY_ID), "name": "CS"})
+
+    groups = MagicMock()
+    groups.find_one = AsyncMock(return_value={
+        "_id": ObjectId(SAMPLE_GROUP_ID),
+        "name": "КН-41",
+        "faculty_id": ObjectId(SAMPLE_FACULTY_ID),
+        "level": "bachelor",
+    })
+
     mock.users = users
     mock.documents = documents
     mock.chat_history = chat_history
     mock.feedback = feedback
+    mock.faculties = faculties
+    mock.groups = groups
 
     return mock
 
@@ -157,14 +177,18 @@ class TestAuthFlow:
             "password": "SecurePass123!",
             "full_name": "Нова Студентка",
             "role": "student",
-            "faculty": "CS",
+            "faculty_id": SAMPLE_FACULTY_ID,
+            "group_id": SAMPLE_GROUP_ID,
+            "year": 1,
+            "level": "bachelor",
         })
 
         assert resp.status_code == 201
         data = resp.json()
         assert data["email"] == "new@knu.ua"
         assert data["role"] == "student"
-        assert data["is_approved"] is True
+        # Both students and teachers wait for admin approval now.
+        assert data["is_approved"] is False
 
     @pytest.mark.asyncio
     async def test_register_teacher_not_approved(self, client, mock_db_collections):
@@ -178,7 +202,7 @@ class TestAuthFlow:
             "password": "SecurePass123!",
             "full_name": "Новий Викладач",
             "role": "teacher",
-            "faculty": "CS",
+            "faculty_id": SAMPLE_FACULTY_ID,
         })
 
         assert resp.status_code == 201
@@ -193,7 +217,10 @@ class TestAuthFlow:
             "password": "SecurePass123!",
             "full_name": "Дублікат",
             "role": "student",
-            "faculty": "CS",
+            "faculty_id": SAMPLE_FACULTY_ID,
+            "group_id": SAMPLE_GROUP_ID,
+            "year": 1,
+            "level": "bachelor",
         })
 
         assert resp.status_code == 409
@@ -260,7 +287,7 @@ class TestDocumentUpload:
             "/api/v1/documents/upload",
             headers={"Authorization": f"Bearer {token}"},
             files={"file": ("test.txt", b"test content", "text/plain")},
-            data={"access_level": "public"},
+            data={"access_level": "public", "faculty_id": SAMPLE_FACULTY_ID},
         )
 
         assert resp.status_code == 403
@@ -273,16 +300,53 @@ class TestDocumentUpload:
         )
 
         from app.core.security import create_access_token
+        from app.services.document_classifier import DocumentClassification
+        from app.services.extractor_registry import ExtractionResult
         token = create_access_token(data={"sub": "admin@knu.ua", "role": "admin"})
 
-        with patch("app.api.v1.documents.vector_store_service") as mock_vs:
+        # Stub the universal pipeline so the test does not call the
+        # real LLM (no API key in CI). The classifier returns "prose",
+        # the extractor returns one chunk built from the file text.
+        fake_extractor = MagicMock()
+        fake_extractor.extract = AsyncMock(
+            return_value=ExtractionResult(
+                chunks=[("Тестовий документ для перевірки", {})],
+                method="prose_recursive",
+            )
+        )
+
+        with (
+            patch("app.api.v1.documents.vector_store_service") as mock_vs,
+            patch(
+                "app.api.v1.documents.classify_document",
+                new_callable=AsyncMock,
+                return_value=DocumentClassification(
+                    doc_type="prose", confidence=0.9, reasoning="stub"
+                ),
+            ),
+            patch(
+                "app.api.v1.documents.generate_document_context",
+                new_callable=AsyncMock,
+                return_value="",
+            ),
+            patch(
+                "app.api.v1.documents.get_extractor",
+                return_value=fake_extractor,
+            ),
+        ):
+            mock_vs.add_documents = AsyncMock(return_value=["id1"])
             mock_vs.add_document_with_chunking = AsyncMock(return_value=["id1"])
 
             resp = await client.post(
                 "/api/v1/documents/upload",
                 headers={"Authorization": f"Bearer {token}"},
                 files={"file": ("test.txt", "Тестовий документ для перевірки".encode("utf-8"), "text/plain")},
-                data={"access_level": "public"},
+                data={
+                    "access_level": "public",
+                    "faculty_id": SAMPLE_FACULTY_ID,
+                    "target_group_ids": "[]",
+                    "target_years": "[]",
+                },
             )
 
         assert resp.status_code == 201
@@ -301,7 +365,7 @@ class TestDocumentUpload:
             "/api/v1/documents/upload",
             headers={"Authorization": f"Bearer {token}"},
             files={"file": ("test.exe", b"binary content", "application/octet-stream")},
-            data={"access_level": "public"},
+            data={"access_level": "public", "faculty_id": SAMPLE_FACULTY_ID},
         )
 
         assert resp.status_code == 400

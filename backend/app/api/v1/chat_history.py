@@ -25,7 +25,7 @@ from app.api.v1.chat import (
     NO_ANSWER_TEXT,
     _attach_document_ids,
     _dedup_chunks,
-    _retrieve_scored_docs,
+    _structured_records_as_sources,
     extract_sources,
     format_chat_history,
     format_docs,
@@ -33,6 +33,8 @@ from app.api.v1.chat import (
     rag_prompt,
     rag_prompt_with_history,
 )
+from app.services.query_analyzer import analyze_query
+from app.services.retrieval_orchestrator import format_structured_context, retrieve
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Chat"])
@@ -64,10 +66,12 @@ async def generate_rag_stream(
             return
         question = input_sanitizer.sanitize(question)
 
-        # Build access filter
+        # Build access + audience filter (mirrors /ask). The
+        # ``target_doc_types`` slot is filled in *after* the analyzer
+        # runs (the analyzer may narrow retrieval to e.g. regulation
+        # docs only); placeholder here keeps the call signature
+        # symmetric with the sync /ask path.
         user_role = user.get("role", "student")
-        user_faculty = user.get("faculty")
-        pre_filter = vector_store_service.build_access_filter(user_role, user_faculty)
 
         # Check documents exist
         doc_count = await db.documents.count_documents({})
@@ -76,35 +80,89 @@ async def generate_rag_stream(
             yield {"event": "done", "data": ""}
             return
 
-        # Retrieve with scoring + dedup, then no-answer guard mirrors /ask.
+        # New 2026-grade pipeline: query analyzer + multi-strategy
+        # retrieval orchestrator + reranker. See chat.run_rag_chain
+        # for the architecture rationale. Mirrored here so the SSE
+        # endpoint shares the same behaviour as the sync /ask path.
+
+        # Load conversation history early — the analyzer uses it for
+        # pronoun resolution on follow-up questions.
+        existing_session = await db.chat_history.find_one(
+            {"session_id": session_id, "user_id": str(user["_id"])},
+            {"messages": {"$slice": -settings.max_conversation_messages}},
+        )
+        prior_messages = existing_session["messages"] if existing_session else []
+
+        analysis = await analyze_query(question, chat_history=prior_messages)
+
+        if analysis.is_personal and (user.get("year") or user.get("level")):
+            suffix_parts: list[str] = []
+            if user.get("level"):
+                suffix_parts.append(str(user["level"]))
+            if user.get("year"):
+                suffix_parts.append(f"{user['year']} курс")
+            if suffix_parts:
+                analysis.reformulated_query = (
+                    f"{analysis.reformulated_query or question}"
+                    f" (для студента {' '.join(suffix_parts)})"
+                ).strip()
+
+        # Filter is built AFTER the analyzer so target_doc_types
+        # narrowing is applied — e.g. policy questions only hit
+        # regulation documents.
+        pre_filter = vector_store_service.build_access_filter(
+            user_role=user_role,
+            user_faculty_id=str(user["faculty_id"]) if user.get("faculty_id") else None,
+            user_group_id=str(user["group_id"]) if user.get("group_id") else None,
+            user_year=user.get("year"),
+            user_level=user.get("level"),
+            target_doc_types=analysis.target_doc_types or None,
+        )
+
         try:
-            docs = await _retrieve_scored_docs(
-                question=question,
+            retrieval = await retrieve(
+                query=question,
+                analysis=analysis,
                 pre_filter=pre_filter,
-                k=settings.top_k_results,
+                user_role=user_role,
+                user_faculty_id=str(user["faculty_id"]) if user.get("faculty_id") else None,
+                user_group_id=str(user["group_id"]) if user.get("group_id") else None,
+                user_year=user.get("year"),
+                user_level=user.get("level"),
+                initial_k=30,
+                final_k=settings.top_k_results,
             )
         except HTTPException as exc:
             yield {"event": "error", "data": exc.detail}
             return
-        docs = _dedup_chunks(docs)
 
-        top_score = max(
-            (d.metadata.get("score", 0.0) for d in docs),
-            default=0.0,
-        )
-        if not docs or top_score < settings.no_answer_score_threshold:
-            logger.info(
-                "SSE no-answer guard: %d docs, top_score=%.2f",
-                len(docs),
-                top_score,
-            )
+        docs = retrieval.docs
+        structured_records = retrieval.structured_records
+
+        if not docs and not structured_records:
+            logger.info("SSE no-answer guard: 0 docs across strategies")
             yield {"event": "session_id", "data": session_id}
             yield {"event": "token", "data": NO_ANSWER_TEXT}
             yield {"event": "done", "data": ""}
             return
 
-        context = format_docs(docs)
-        sources = extract_sources(docs)
+        if structured_records:
+            context = format_structured_context(structured_records)
+            sources = _structured_records_as_sources(structured_records)
+        else:
+            scored = [d.metadata["score"] for d in docs if "score" in d.metadata]
+            if scored and max(scored) < settings.no_answer_score_threshold:
+                logger.info(
+                    "SSE no-answer guard tripped: top=%.2f",
+                    max(scored),
+                )
+                yield {"event": "session_id", "data": session_id}
+                yield {"event": "token", "data": NO_ANSWER_TEXT}
+                yield {"event": "done", "data": ""}
+                return
+            docs = _dedup_chunks(docs)
+            context = format_docs(docs)
+            sources = extract_sources(docs)
         sources = await _attach_document_ids(sources)
 
         # Send session ID so the frontend can track the conversation
@@ -114,12 +172,9 @@ async def generate_rag_stream(
         if sources:
             yield {"event": "sources", "data": sources}
 
-        # Load conversation history for multi-turn context
-        existing_session = await db.chat_history.find_one(
-            {"session_id": session_id, "user_id": str(user["_id"])},
-            {"messages": {"$slice": -settings.max_conversation_messages}},
-        )
-        prior_messages = existing_session["messages"] if existing_session else []
+        # ``prior_messages`` was loaded earlier (the analyzer needed
+        # it for pronoun resolution). Reuse here to avoid a second
+        # round trip to Mongo.
 
         # Build LCEL chain — use history-aware prompt when prior messages exist
         llm = await get_llm()
@@ -204,6 +259,18 @@ async def generate_rag_stream(
         yield {"event": "error", "data": "Помилка при обробці запиту"}
     except HTTPException as e:
         logger.error("SSE stream HTTP error: %s", e.detail)
+        yield {"event": "error", "data": "Помилка при обробці запиту"}
+    except Exception as e:
+        # Catch-all so that any unexpected backend failure (including
+        # PyMongoError from Atlas Vector Search filter validation)
+        # surfaces to the user as a clean error event instead of an
+        # abruptly closed stream that leaves the UI hanging.
+        logger.error(
+            "SSE stream unhandled error (%s): %s",
+            type(e).__name__,
+            e,
+            exc_info=True,
+        )
         yield {"event": "error", "data": "Помилка при обробці запиту"}
 
 

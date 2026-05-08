@@ -119,6 +119,35 @@ class TestRunRagChain:
             },
         )
 
+    def _stub_analysis(self, **overrides):
+        """Build a QueryAnalysis stub for tests. We don't run the
+        analyzer LLM during unit tests — analyze_query is mocked to
+        return this synthetic analysis."""
+        from app.services.query_analyzer import QueryAnalysis
+
+        params = dict(
+            intent="general",
+            confidence=0.5,
+            is_personal=False,
+            entities={},
+            reformulated_query="Тестове питання",
+            preferred_strategies=["vector"],
+        )
+        params.update(overrides)
+        return QueryAnalysis(**params)
+
+    def _stub_retrieval(self, docs=None, structured=None):
+        """Build a RetrievalResult stub the orchestrator would
+        normally produce."""
+        from app.services.retrieval_orchestrator import RetrievalResult
+
+        return RetrievalResult(
+            docs=docs or [],
+            structured_records=structured or [],
+            used_strategies=["vector"],
+            counts_per_strategy={"vector": len(docs or [])},
+        )
+
     @pytest.mark.asyncio
     async def test_initializes_and_calls_access_filter(self):
         """run_rag_chain must build the access filter and produce sources."""
@@ -129,9 +158,14 @@ class TestRunRagChain:
             patch("app.api.v1.chat.get_llm", new_callable=AsyncMock),
             patch("app.api.v1.chat.rag_prompt") as mock_prompt,
             patch(
-                "app.api.v1.chat._retrieve_scored_docs",
+                "app.api.v1.chat.analyze_query",
                 new_callable=AsyncMock,
-                return_value=[scored_doc],
+                return_value=self._stub_analysis(),
+            ),
+            patch(
+                "app.api.v1.chat.retrieve",
+                new_callable=AsyncMock,
+                return_value=self._stub_retrieval(docs=[scored_doc]),
             ),
             patch(
                 "app.api.v1.chat._attach_document_ids",
@@ -148,9 +182,18 @@ class TestRunRagChain:
             mock_vs.build_access_filter = MagicMock(return_value={})
             mock_prompt.__or__ = MagicMock(return_value=mock_chain)
 
-            result = await run_rag_chain("Тестове питання", "student", "CS")
+            result = await run_rag_chain(
+                "Тестове питання", "student", user_faculty_id="cs-id"
+            )
 
-            mock_vs.build_access_filter.assert_called_once_with("student", "CS")
+            mock_vs.build_access_filter.assert_called_once_with(
+                user_role="student",
+                user_faculty_id="cs-id",
+                user_group_id=None,
+                user_year=None,
+                user_level=None,
+                target_doc_types=None,
+            )
             assert result["grounded"] is True
             assert len(result["docs"]) == 1
             assert result["sources"]
@@ -165,9 +208,14 @@ class TestRunRagChain:
         with (
             patch("app.api.v1.chat.vector_store_service") as mock_vs,
             patch(
-                "app.api.v1.chat._retrieve_scored_docs",
+                "app.api.v1.chat.analyze_query",
                 new_callable=AsyncMock,
-                return_value=[weak_doc],
+                return_value=self._stub_analysis(),
+            ),
+            patch(
+                "app.api.v1.chat.retrieve",
+                new_callable=AsyncMock,
+                return_value=self._stub_retrieval(docs=[weak_doc]),
             ),
             patch("app.api.v1.chat.settings") as mock_settings,
         ):
@@ -177,7 +225,7 @@ class TestRunRagChain:
             mock_settings.source_preview_max_chars = 350
             mock_vs.build_access_filter = MagicMock(return_value={})
 
-            result = await run_rag_chain("Test", "student", None)
+            result = await run_rag_chain("Test", "student", user_faculty_id=None)
 
             assert result["grounded"] is False
             assert result["sources"] == []
@@ -186,47 +234,88 @@ class TestRunRagChain:
 
     @pytest.mark.asyncio
     async def test_student_access_filter(self):
-        """Student should get student-specific filter passed to retriever."""
+        """Student access filter is built from the user's profile and
+        passed to the orchestrator unchanged."""
         mock_chain = self._make_mock_chain()
+        scored_doc = self._make_scored_doc()
+        student_filter = {"$or": [{"access_level": "public"}]}
         with (
             patch("app.api.v1.chat.vector_store_service") as mock_vs,
             patch("app.api.v1.chat.get_llm", new_callable=AsyncMock),
             patch("app.api.v1.chat.rag_prompt") as mock_prompt,
+            patch(
+                "app.api.v1.chat.analyze_query",
+                new_callable=AsyncMock,
+                return_value=self._stub_analysis(),
+            ),
+            patch(
+                "app.api.v1.chat.retrieve",
+                new_callable=AsyncMock,
+                return_value=self._stub_retrieval(docs=[scored_doc]),
+            ) as mock_retrieve,
+            patch(
+                "app.api.v1.chat._attach_document_ids",
+                new_callable=AsyncMock,
+                side_effect=lambda s: s,
+            ),
             patch("app.api.v1.chat.settings") as mock_settings,
         ):
-            mock_settings.use_hybrid_search = True
             mock_settings.top_k_results = 5
             mock_settings.llm_timeout_seconds = 30
-            student_filter = {"$or": [{"access_level": "public"}]}
-            self._setup_vs_mock(mock_vs, access_filter=student_filter)
+            mock_settings.no_answer_score_threshold = 0.55
+            mock_settings.source_preview_max_chars = 350
+            mock_vs.build_access_filter = MagicMock(return_value=student_filter)
             mock_prompt.__or__ = MagicMock(return_value=mock_chain)
 
-            await run_rag_chain("Test", "student", "CS")
+            await run_rag_chain("Test", "student", user_faculty_id="cs-id")
 
-            call_kwargs = mock_vs.get_hybrid_retriever.call_args[1]
-            assert call_kwargs["pre_filter"] == student_filter
+            assert mock_retrieve.await_args.kwargs["pre_filter"] == student_filter
 
     @pytest.mark.asyncio
     async def test_admin_gets_no_filter(self):
-        """Admin should get empty filter -> passed as None to retriever."""
+        """Admin gets an empty access filter, which the orchestrator
+        forwards verbatim."""
         mock_chain = self._make_mock_chain()
+        scored_doc = self._make_scored_doc()
         with (
             patch("app.api.v1.chat.vector_store_service") as mock_vs,
             patch("app.api.v1.chat.get_llm", new_callable=AsyncMock),
             patch("app.api.v1.chat.rag_prompt") as mock_prompt,
+            patch(
+                "app.api.v1.chat.analyze_query",
+                new_callable=AsyncMock,
+                return_value=self._stub_analysis(),
+            ),
+            patch(
+                "app.api.v1.chat.retrieve",
+                new_callable=AsyncMock,
+                return_value=self._stub_retrieval(docs=[scored_doc]),
+            ) as mock_retrieve,
+            patch(
+                "app.api.v1.chat._attach_document_ids",
+                new_callable=AsyncMock,
+                side_effect=lambda s: s,
+            ),
             patch("app.api.v1.chat.settings") as mock_settings,
         ):
-            mock_settings.use_hybrid_search = True
             mock_settings.top_k_results = 5
             mock_settings.llm_timeout_seconds = 30
-            self._setup_vs_mock(mock_vs, access_filter={})
+            mock_settings.no_answer_score_threshold = 0.55
+            mock_settings.source_preview_max_chars = 350
+            mock_vs.build_access_filter = MagicMock(return_value={})
             mock_prompt.__or__ = MagicMock(return_value=mock_chain)
 
             await run_rag_chain("Test", "admin")
 
-            mock_vs.build_access_filter.assert_called_once_with("admin", None)
-            call_kwargs = mock_vs.get_hybrid_retriever.call_args[1]
-            assert call_kwargs["pre_filter"] is None
+            mock_vs.build_access_filter.assert_called_once_with(
+                user_role="admin",
+                user_faculty_id=None,
+                user_group_id=None,
+                user_year=None,
+                user_level=None,
+                target_doc_types=None,
+            )
+            assert mock_retrieve.await_args.kwargs["pre_filter"] == {}
 
 
 class TestLLMInit:
