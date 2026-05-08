@@ -76,10 +76,29 @@ _DAY_VARIANTS: dict[str, str] = {
 
 
 def _canonical_day(value: str) -> Optional[str]:
+    """Map a cell's text to a canonical day name.
+
+    Handles three layouts:
+
+    * Plain horizontal text (``"вівторок"``): direct lookup.
+    * Vertical text where chars are stacked top-to-bottom but the
+      word reads top-to-bottom (``"в\\nі\\nв\\nт\\nо\\nр\\nо\\nк"``):
+      whitespace stripped → direct lookup.
+    * Vertical text where chars are stacked top-to-bottom but the
+      word reads BOTTOM-to-TOP (``"к\\nо\\nр\\nо\\nт\\nв\\nі\\nв"``):
+      whitespace stripped, then reversed → lookup.
+
+    The bottom-to-top layout is common in pdfplumber output for
+    Ukrainian schedule day-column cells where the day label is
+    rotated 90° clockwise inside a tall narrow cell.
+    """
     if not value:
         return None
     normalised = re.sub(r"[\s\-_,.]+", "", value.lower())
-    return _DAY_VARIANTS.get(normalised)
+    direct = _DAY_VARIANTS.get(normalised)
+    if direct:
+        return direct
+    return _DAY_VARIANTS.get(normalised[::-1])
 
 
 # Group-label heuristics. A "group" cell typically contains a short

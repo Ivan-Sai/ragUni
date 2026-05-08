@@ -14,7 +14,7 @@ from pathlib import Path
 
 import httpx
 
-BASE = "http://localhost:8001/api/v1"
+BASE = "http://localhost:8000/api/v1"
 PDF_PATH = Path(r"C:\Users\vania\Downloads\F7-KI-_123-KI-2025-2026_2-sem-1_2.pdf")
 ADMIN_EMAIL = "admin@test.com"
 ADMIN_PASSWORD = "AdminPass1234"
@@ -169,9 +169,10 @@ async def main() -> int:
         out("STUDENT TOKEN", "minted")
 
         for q in [
-            "який у мене розклад в четвер?",
-            "що у мене в понеділок?",
-            "коли у мене Системне програмне забезпечення?",
+            "який у мене розклад на тиждень?",
+            "що у мене у вівторок?",
+            "що у мене у п'ятницю?",
+            "коли у мене Програмування вбудованих систем?",
         ]:
             answer = await chat(client, student_token, q)
             out(f"ANSWER: {q}", {

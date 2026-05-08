@@ -87,19 +87,28 @@ class DocumentParser:
         """Extract pre-attributed schedule cells from a PDF.
 
         Used by the schedule extractor as the deterministic primary
-        path: walks every pdfplumber table, applies the same
-        vertical-text destacking we use for the markdown render,
-        then asks ``schedule_table_parser`` to identify column→group
-        mappings and emit one ``CellEvent`` per (group, day, time)
-        slot.
+        path: walks every pdfplumber table, applies vertical-text
+        destacking, then asks ``schedule_table_parser`` to identify
+        column→group mappings and emit one ``CellEvent`` per
+        (group, day, time) slot.
 
-        Multi-page tables: a Ukrainian week-grid PDF typically
-        prints the column header (groups, years, levels) on page 1
-        and lets pages 2/3 continue with raw data rows. We detect
-        this by parsing each table separately first; if a later
-        table comes back ``parsed_successfully=False`` but the same
-        column layout was learned from an earlier table, we re-run
-        it with the earlier columns threaded in as a fallback header.
+        Multi-page consistency
+        ----------------------
+
+        Ukrainian week-grid PDFs print the column header (groups,
+        years, levels) once on page 1 and leave pages 2/3 as raw
+        data rows. Worse, pdfplumber's auto column detection often
+        finds a *different* number of columns on continuation pages
+        because narrower text or missing border cues let it split a
+        single visual column into two. The naive "thread page 1
+        columns by index" approach then mis-attributes every cell.
+
+        Fix: extract page 1 with default settings to learn the
+        canonical vertical grid (cell bbox x-coordinates), then
+        re-extract pages 2..N with ``explicit_vertical_lines`` set
+        to those same coordinates. All pages now report the same
+        column count and ``column[i]`` means the same group on
+        every page.
 
         Returns an empty list when no table on any page parses as a
         schedule grid; the caller should fall back to LLM-only
@@ -112,11 +121,30 @@ class DocumentParser:
         )
 
         cells: list[CellEvent] = []
-        last_columns = None  # threaded header for continuation pages
+        last_columns = None
+        canonical_ranges: list[tuple[float, float]] | None = None
         try:
             with pdfplumber.open(io.BytesIO(file_content)) as pdf:
                 for page in pdf.pages:
-                    for table in page.extract_tables() or []:
+                    # Continuation pages get re-emitted onto page 1's
+                    # canonical column grid via x-overlap before
+                    # parsing — preserves text content while keeping
+                    # column index meaningful across pages.
+                    page_rows: list[list[list[str]]] = []
+                    if canonical_ranges:
+                        remapped = _remap_table_to_canonical_grid(
+                            page, canonical_ranges
+                        )
+                        if remapped:
+                            page_rows.append(remapped)
+                        else:
+                            for table in page.extract_tables() or []:
+                                page_rows.append(table)
+                    else:
+                        for table in page.extract_tables() or []:
+                            page_rows.append(table)
+
+                    for table in page_rows:
                         if len(table) < 2 or max(len(r) for r in table) < 3:
                             continue
                         rows = [
@@ -128,10 +156,9 @@ class DocumentParser:
                         if result.parsed_successfully:
                             cells.extend(result.cells)
                             last_columns = result.columns
+                            if canonical_ranges is None:
+                                canonical_ranges = _table_canonical_x_ranges(page)
                         elif last_columns:
-                            # Continuation page: reuse the header
-                            # learned from a previous table on this
-                            # document.
                             result2 = parse_schedule_table_with_columns(
                                 rows, last_columns,
                             )
@@ -317,30 +344,295 @@ def _normalise_for_match(s: str) -> str:
     return out
 
 
-def _pick_destacked_orientation(chars_top_down: list[str]) -> str | None:
-    """Decide whether to read a stacked column top-to-bottom,
-    bottom-to-top, or neither. Returns the assembled label, or None
-    when nothing recognisable comes out either way.
+def _match_one_marker(chars: list[str]) -> tuple[str, int] | None:
+    """Look for ONE marker word in ``chars``, trying forward and
+    reverse orientation. Return ``(label, length_consumed)`` for the
+    LONGEST matching marker, or ``None`` if no marker fits.
 
-    University tables print day names both ways depending on the
-    publishing tool — Word tends to bottom-up, plain LaTeX top-down.
-    We try both and accept the first that contains any of the
-    recognised marker words as a substring. This is permissive on
-    purpose: a false-positive de-stack only loses one cell of data,
-    while a false-negative keeps the LLM blind to entire rows.
+    Used by ``_destack_vertical_text`` to peel a single day name off
+    a long run that may contain several stacked words back-to-back
+    (e.g. ``вівторок`` immediately followed by ``середа`` in the
+    same column on a multi-day continuation page).
+    """
+    if not chars:
+        return None
+
+    def _raw_consumed(orientation: list[str], marker_norm: str) -> int | None:
+        """Return how many raw chars in ``orientation`` correspond to
+        the leading ``marker_norm`` in normalised form, or ``None`` if
+        the orientation does not start with the marker.
+
+        Walks ``orientation`` one raw char at a time and counts only
+        chars that survive normalisation (apostrophes are dropped by
+        ``_normalise_for_match``). When the running normalised buffer
+        equals ``marker_norm``, the current raw offset is returned —
+        so ``"п’ятниця"`` with marker ``"пятниця"`` returns 8, not 7.
+        """
+        norm_seen = ""
+        for raw_idx, raw_char in enumerate(orientation, start=1):
+            norm_seen += _normalise_for_match(raw_char)
+            if not marker_norm.startswith(norm_seen):
+                return None
+            if norm_seen == marker_norm:
+                return raw_idx
+        return None
+
+    # Try forward (top-down) and reverse (bottom-up) orientations.
+    # Prefer the longer match so "понеділок" wins over "ділок".
+    candidates: list[tuple[str, int]] = []
+    sorted_markers = sorted(_VERTICAL_MARKER_WORDS, key=len, reverse=True)
+    for orientation in (chars, list(reversed(chars))):
+        for marker in sorted_markers:
+            marker_norm = _normalise_for_match(marker)
+            if not marker_norm:
+                continue
+            consumed = _raw_consumed(orientation, marker_norm)
+            if consumed is None:
+                continue
+            label = "".join(orientation[:consumed])
+            candidates.append((label, consumed))
+            break
+    if not candidates:
+        return None
+    return max(candidates, key=lambda c: c[1])
+
+
+def _pick_destacked_orientation(chars_top_down: list[str]) -> str | None:
+    """Backwards-compatible wrapper around ``_match_one_marker`` —
+    returns just the label when the run matches a marker exactly
+    (whole-run match). Used by the within-cell destack helper.
     """
     if len(chars_top_down) < 3:
         return None
-    top_down = "".join(chars_top_down)
-    bottom_up = "".join(reversed(chars_top_down))
+    match = _match_one_marker(chars_top_down)
+    if not match:
+        return None
+    label, consumed = match
+    if consumed != len(chars_top_down):
+        return None
+    return label
 
-    for candidate in (bottom_up, top_down):
-        norm = _normalise_for_match(candidate)
-        for marker in _VERTICAL_MARKER_WORDS:
-            marker_norm = _normalise_for_match(marker)
-            if marker_norm and marker_norm in norm:
-                return candidate
-    return None
+
+def _table_canonical_x_ranges(page) -> list[tuple[float, float]] | None:
+    """Return the ``(x0, x1)`` range of every column in the first
+    table on ``page``.
+
+    Used by ``extract_schedule_cells`` to lock page 1's column
+    boundaries and remap subsequent pages' cells onto the same
+    column index by x-overlap. Returns ``None`` when the page has
+    no recognisable table.
+    """
+    try:
+        tables = page.find_tables()
+    except Exception:  # noqa: BLE001 — pdfplumber wraps many libs
+        return None
+    if not tables:
+        return None
+    table = tables[0]
+    xs: set[float] = set()
+    for cell in table.cells or []:
+        if cell:
+            x0, _top, x1, _bottom = cell
+            xs.add(round(float(x0), 1))
+            xs.add(round(float(x1), 1))
+    if len(xs) < 3:
+        return None
+    sorted_xs = sorted(xs)
+    return list(zip(sorted_xs[:-1], sorted_xs[1:]))
+
+
+def _remap_table_to_canonical_grid(
+    page,
+    canonical_ranges: list[tuple[float, float]],
+    canonical_y_lines: list[float] | None = None,
+) -> list[list[str]] | None:
+    """Re-emit a page's content onto page 1's canonical column grid.
+
+    Walks ``Table.cells`` (the original physical cell bboxes from
+    pdfplumber) and, for every cell, places its text in *every*
+    canonical column the cell horizontally overlaps. Joint cells —
+    where one entry visually spans two adjacent group columns — are
+    therefore preserved on both groups instead of being shredded
+    into character fragments.
+
+    Each cell's text is read by cropping the page to the cell bbox
+    and running ``extract_text``; row indexing is done by clustering
+    cells by their ``top`` y-coordinate. The result has exactly the
+    same column count as page 1's canonical grid, so downstream
+    parsing (day/time/group attribution) sees a consistent shape on
+    every page.
+
+    Falls back to a word-level x-centre map when the page has no
+    detectable table (for sparse pages where ``find_tables`` returns
+    empty), so a misdetected page never silently disappears.
+    """
+    n_canonical = len(canonical_ranges)
+    if n_canonical == 0:
+        return None
+
+    try:
+        tables = page.find_tables()
+    except Exception:  # noqa: BLE001
+        tables = []
+    if not tables:
+        return _remap_words_to_canonical_grid(page, canonical_ranges)
+
+    table = tables[0]
+    rows_obj = getattr(table, "rows", None)
+    if not rows_obj:
+        return _remap_words_to_canonical_grid(page, canonical_ranges)
+
+    # Extract words once for the whole page. Word centres tell us
+    # which physical cell a word belongs to without ever cropping —
+    # cropping picks up glyphs from neighbouring cells when the
+    # crop padding is even slightly generous, which produced
+    # characters-interleaved garbage on dense rows.
+    try:
+        page_words = page.extract_words(
+            use_text_flow=False,
+            keep_blank_chars=False,
+        )
+    except Exception:  # noqa: BLE001
+        page_words = []
+
+    def _word_center(w: dict) -> tuple[float, float]:
+        return (
+            (float(w["x0"]) + float(w["x1"])) / 2.0,
+            (float(w["top"]) + float(w["bottom"])) / 2.0,
+        )
+
+    def _overlapping_cols(x0: float, x1: float) -> list[int]:
+        """All canonical column indices whose x-range overlaps the
+        cell's x-range by at least 1pt."""
+        out: list[int] = []
+        for idx, (rx0, rx1) in enumerate(canonical_ranges):
+            overlap = min(x1, rx1) - max(x0, rx0)
+            if overlap >= 1.0:
+                out.append(idx)
+        return out
+
+    def _cell_text(bbox: tuple[float, float, float, float]) -> str:
+        """Assemble the cell's text from words whose centre lies
+        strictly inside the cell bbox. Words are emitted in
+        natural reading order (top-to-bottom, then left-to-right
+        within each line)."""
+        x0, top, x1, bottom = bbox
+        contained = []
+        for w in page_words:
+            cx, cy = _word_center(w)
+            if x0 <= cx <= x1 and top <= cy <= bottom:
+                contained.append(w)
+        if not contained:
+            return ""
+        contained.sort(key=lambda w: (round(float(w["top"]), 1), float(w["x0"])))
+        # Group by visual line (≈3.5pt y-tolerance) and join words
+        # within a line with single spaces, lines with single spaces
+        # too — the schedule parser doesn't care about line breaks.
+        out_parts: list[str] = []
+        current_line: list[str] = []
+        current_top: float | None = None
+        for w in contained:
+            top_w = float(w["top"])
+            if current_top is None or abs(top_w - current_top) <= 3.5:
+                current_line.append(w.get("text", ""))
+                current_top = top_w if current_top is None else current_top
+            else:
+                if current_line:
+                    out_parts.append(" ".join(current_line))
+                current_line = [w.get("text", "")]
+                current_top = top_w
+        if current_line:
+            out_parts.append(" ".join(current_line))
+        return " ".join(p for p in out_parts if p).strip()
+
+    remapped: list[list[str]] = []
+    for row_obj in rows_obj:
+        row_cells_raw = [
+            (float(c[0]), float(c[1]), float(c[2]), float(c[3]))
+            for c in (row_obj.cells or [])
+            if c is not None
+        ]
+        if not row_cells_raw:
+            continue
+        # Sort the row's cells left-to-right.
+        row_cells_raw.sort(key=lambda c: c[0])
+
+        out_row = [""] * n_canonical
+        for x0, top, x1, bottom in row_cells_raw:
+            text = _cell_text((x0, top, x1, bottom))
+            if not text:
+                continue
+            for col_idx in _overlapping_cols(x0, x1):
+                if out_row[col_idx]:
+                    out_row[col_idx] += " " + text
+                else:
+                    out_row[col_idx] = text
+        if any(out_row):
+            remapped.append(out_row)
+    return remapped
+
+
+def _remap_words_to_canonical_grid(
+    page,
+    canonical_ranges: list[tuple[float, float]],
+) -> list[list[str]] | None:
+    """Word-level fallback used when ``find_tables`` returns nothing.
+
+    Each word is dropped into the canonical column whose x-range
+    covers the word's centre. Cannot recover horizontally-merged
+    joint cells — that's why the cell-bbox path above is preferred —
+    but is good enough for sparse pages that have no detectable
+    table grid.
+    """
+    try:
+        words = page.extract_words(use_text_flow=False, keep_blank_chars=False)
+    except Exception:  # noqa: BLE001
+        return None
+    if not words:
+        return None
+
+    n_canonical = len(canonical_ranges)
+
+    sorted_words = sorted(words, key=lambda w: (round(w["top"], 1), w["x0"]))
+    rows: list[list[dict]] = []
+    current_top: float | None = None
+    current_row: list[dict] = []
+    for w in sorted_words:
+        top = float(w["top"])
+        if current_top is None or abs(top - current_top) <= 3.5:
+            current_row.append(w)
+            current_top = top if current_top is None else current_top
+        else:
+            rows.append(current_row)
+            current_row = [w]
+            current_top = top
+    if current_row:
+        rows.append(current_row)
+
+    def _assign(x0: float, x1: float) -> int | None:
+        centre = (x0 + x1) / 2.0
+        for idx, (rx0, rx1) in enumerate(canonical_ranges):
+            if rx0 - 0.5 <= centre <= rx1 + 0.5:
+                return idx
+        return None
+
+    remapped: list[list[str]] = []
+    for word_row in rows:
+        out_row = [""] * n_canonical
+        for w in word_row:
+            target = _assign(float(w["x0"]), float(w["x1"]))
+            if target is None:
+                continue
+            text = w.get("text", "")
+            if not text:
+                continue
+            if out_row[target]:
+                out_row[target] += " " + text
+            else:
+                out_row[target] = text
+        if any(out_row):
+            remapped.append(out_row)
+    return remapped
 
 
 # Within-cell vertical stack: a single cell whose content is
@@ -414,17 +706,31 @@ def _destack_vertical_text(rows: list[list[str]]) -> list[list[str]]:
                 ]
                 if len(paired) < 4:
                     return
-                label = _pick_destacked_orientation([c for _, c in paired])
-                if not label:
-                    return
-                # Anchor the label at the FIRST non-empty letter row.
-                # Placing it in run_indices[0] would lose the link to
-                # the data the run sits next to (the day label belongs
-                # next to its time slots, not at the top of the table).
-                anchor = paired[0][0]
-                result[anchor][col_idx] = label
-                for idx, _ in paired[1:]:
-                    result[idx][col_idx] = ""
+                # Split the run at large row-index gaps. A real
+                # vertical word stack is compact — each letter sits
+                # one or two rows below the previous. A bigger gap
+                # (≥6 rows of empty cells) almost always means we
+                # crossed into the next day's stack on a continuation
+                # page that stacks several days in the same column.
+                gap_threshold = 6
+                groups: list[list[tuple[int, str]]] = [[paired[0]]]
+                for prev, curr in zip(paired, paired[1:]):
+                    if curr[0] - prev[0] >= gap_threshold:
+                        groups.append([curr])
+                    else:
+                        groups[-1].append(curr)
+
+                for group in groups:
+                    if len(group) < 4:
+                        continue
+                    chars_only = [c for _, c in group]
+                    label = _pick_destacked_orientation(chars_only)
+                    if not label:
+                        continue
+                    anchor = group[0][0]
+                    result[anchor][col_idx] = label
+                    for idx, _ in group[1:]:
+                        result[idx][col_idx] = ""
             finally:
                 run_indices = []
                 run_chars = []
@@ -435,8 +741,23 @@ def _destack_vertical_text(rows: list[list[str]]) -> list[list[str]]:
             if len(cell) <= 1 and (not cell or cell.isalpha()):
                 run_indices.append(row_idx)
                 run_chars.append(cell)
-            else:
-                flush_run()
+                continue
+            # Multiple short tokens separated by whitespace — common
+            # when pdfplumber's word splitter merges two adjacent
+            # vertical-stack rows (e.g. "’ п" for the apostrophe and
+            # п at the bottom of "п'ятниця"). Treat each whitespace-
+            # separated single-glyph token as if it were its own row
+            # entry so the run picks up the trailing letters.
+            tokens = cell.split()
+            if tokens and all(
+                len(t) == 1 and (t.isalpha() or t in "'’`")
+                for t in tokens
+            ):
+                for t in tokens:
+                    run_indices.append(row_idx)
+                    run_chars.append(t)
+                continue
+            flush_run()
         flush_run()
 
     return result
