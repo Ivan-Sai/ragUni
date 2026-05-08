@@ -6,12 +6,37 @@ from bson import ObjectId
 from datetime import datetime
 
 
+SAMPLE_FACULTY_ID = "507f1f77bcf86cd7994390ff"
+SAMPLE_GROUP_ID = "507f1f77bcf86cd7994390fe"
+
+
 @pytest.fixture
 def mock_db():
-    """Mock MongoDB collections for auth tests."""
+    """Mock MongoDB collections for auth tests.
+
+    Pre-stocks the faculty/group dictionary lookups that the
+    register endpoint performs as part of validation, so each test
+    only has to drive the user-collection behaviour it cares about.
+    """
     mock_users = AsyncMock()
+    mock_faculties = AsyncMock()
+    mock_groups = AsyncMock()
+
+    # Default: dictionary entries exist and are consistent with the
+    # sample fixtures below.
+    mock_faculties.find_one.return_value = {"_id": ObjectId(SAMPLE_FACULTY_ID)}
+    mock_groups.find_one.return_value = {
+        "_id": ObjectId(SAMPLE_GROUP_ID),
+        "faculty_id": ObjectId(SAMPLE_FACULTY_ID),
+        "level": "bachelor",
+        "name": "КН-41",
+    }
+
     mock = MagicMock()
     mock.users = mock_users
+    mock.faculties = mock_faculties
+    mock.groups = mock_groups
+
     with patch("app.api.v1.auth.get_database", return_value=mock):
         yield mock
 
@@ -23,9 +48,10 @@ def sample_student():
         "password": "SecurePass123!",
         "full_name": "Іван Петренко",
         "role": "student",
-        "faculty": "Факультет комп'ютерних наук",
-        "group": "КН-41",
+        "faculty_id": SAMPLE_FACULTY_ID,
+        "group_id": SAMPLE_GROUP_ID,
         "year": 4,
+        "level": "bachelor",
     }
 
 
@@ -36,7 +62,7 @@ def sample_teacher():
         "password": "SecurePass123!",
         "full_name": "Олена Іваненко",
         "role": "teacher",
-        "faculty": "Факультет комп'ютерних наук",
+        "faculty_id": SAMPLE_FACULTY_ID,
         "department": "Кафедра КІ",
         "position": "Доцент",
     }
@@ -58,7 +84,8 @@ class TestRegister:
         data = response.json()
         assert data["email"] == "student@knu.ua"
         assert data["role"] == "student"
-        assert data["is_approved"] is True
+        # Students wait for admin approval just like teachers.
+        assert data["is_approved"] is False
         assert "password" not in data
         assert "hashed_password" not in data
 
@@ -93,7 +120,7 @@ class TestRegister:
             "password": "SecurePass123!",
             "full_name": "Evil Admin",
             "role": "admin",
-            "faculty": "CS",
+            "faculty_id": SAMPLE_FACULTY_ID,
         }
         response = await client.post("/api/v1/auth/register", json=admin_data)
         assert response.status_code == 422
@@ -122,7 +149,7 @@ class TestLogin:
             "is_active": True,
             "is_approved": True,
             "full_name": "Test",
-            "faculty": "CS",
+            "faculty_id": ObjectId(SAMPLE_FACULTY_ID),
         }
 
         response = await client.post(
@@ -266,7 +293,7 @@ class TestGetMe:
             "email": "student@knu.ua",
             "full_name": "Іван Петренко",
             "role": "student",
-            "faculty": "CS",
+            "faculty_id": ObjectId(SAMPLE_FACULTY_ID),
             "is_approved": True,
             "is_active": True,
             "created_at": datetime.now(),

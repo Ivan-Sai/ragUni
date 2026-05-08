@@ -1,10 +1,28 @@
-"""User models for authentication and RBAC."""
+"""User models for authentication and RBAC.
+
+The profile schema is enforced by role:
+
+* Students must register with a known faculty, group, year and study
+  level. These fields drive the hard-filter on retrieval, so they
+  cannot be missing.
+* Teachers must register with a known faculty (department / position
+  remain optional).
+* Admins are created out-of-band and have no required dictionary
+  fields.
+
+Profile dictionary fields (``faculty_id``, ``group_id``, ``year``,
+``level``) are intentionally **immutable** for non-admin users — once
+registered, only an admin can correct them. This is enforced at the
+endpoint layer, not on the model itself.
+"""
 
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+
+from app.models.dictionary import StudyLevel
 
 
 class UserRole(str, Enum):
@@ -39,15 +57,36 @@ class UserCreate(BaseModel):
 
     full_name: str = Field(..., min_length=1)
     role: RegistrationRole
-    faculty: str = Field(..., min_length=1)
 
-    # Student-specific
-    group: Optional[str] = None
+    # Faculty is mandatory for both roles — it drives access control.
+    faculty_id: str = Field(..., min_length=1)
+
+    # Student-specific (mandatory when role == student).
+    group_id: Optional[str] = None
     year: Optional[int] = Field(None, ge=1, le=6)
+    level: Optional[StudyLevel] = None
 
-    # Teacher-specific
+    # Teacher-specific (free text, not in dictionary).
     department: Optional[str] = None
     position: Optional[str] = None
+
+    @model_validator(mode="after")
+    def enforce_role_specific_fields(self) -> "UserCreate":
+        if self.role == RegistrationRole.student:
+            missing = [
+                name
+                for name, value in (
+                    ("group_id", self.group_id),
+                    ("year", self.year),
+                    ("level", self.level),
+                )
+                if value in (None, "")
+            ]
+            if missing:
+                raise ValueError(
+                    "Students must provide " + ", ".join(missing)
+                )
+        return self
 
 
 class UserInDB(BaseModel):
@@ -57,13 +96,14 @@ class UserInDB(BaseModel):
     hashed_password: str
     full_name: str
     role: UserRole = UserRole.student
-    faculty: Optional[str] = None
 
-    # Student-specific
-    group: Optional[str] = None
+    # Dictionary references (stored as ObjectId strings on the document).
+    faculty_id: Optional[str] = None
+    group_id: Optional[str] = None
     year: Optional[int] = None
+    level: Optional[StudyLevel] = None
 
-    # Teacher-specific
+    # Teacher-specific free-text fields.
     department: Optional[str] = None
     position: Optional[str] = None
 
@@ -74,9 +114,14 @@ class UserInDB(BaseModel):
 
     @model_validator(mode="after")
     def set_default_approval(self):
-        """Students are approved by default, teachers need admin approval."""
+        """Every freshly registered user starts unapproved.
+
+        Admins explicitly approve students AND teachers — see
+        ``api/v1/auth.register``. Admin accounts are pre-approved when
+        seeded via the dedicated script.
+        """
         if self.is_approved is None:
-            self.is_approved = self.role == UserRole.student
+            self.is_approved = self.role == UserRole.admin
         return self
 
 
@@ -123,16 +168,31 @@ class ResetPasswordRequest(BaseModel):
 
 
 class ProfileUpdateRequest(BaseModel):
-    """Schema for updating user profile."""
+    """Profile fields a non-admin user can self-update.
+
+    Dictionary fields (``faculty_id``, ``group_id``, ``year``,
+    ``level``) are intentionally absent — only admins may change those
+    via the dedicated admin endpoint, so the registered audience for a
+    student stays a verified fact.
+    """
 
     full_name: Optional[str] = Field(None, min_length=1)
-    faculty: Optional[str] = Field(None, min_length=1)
+    department: Optional[str] = None
+    position: Optional[str] = None
 
-    # Student-specific
-    group: Optional[str] = None
+
+class AdminUserUpdateRequest(BaseModel):
+    """Profile fields an admin can change for any user.
+
+    Lets the admin correct a wrong faculty / group / year / level on
+    behalf of the student — there is no self-service path for those.
+    """
+
+    full_name: Optional[str] = Field(None, min_length=1)
+    faculty_id: Optional[str] = None
+    group_id: Optional[str] = None
     year: Optional[int] = Field(None, ge=1, le=6)
-
-    # Teacher-specific
+    level: Optional[StudyLevel] = None
     department: Optional[str] = None
     position: Optional[str] = None
 
@@ -144,9 +204,12 @@ class UserResponse(BaseModel):
     email: str
     full_name: str
     role: UserRole
-    faculty: Optional[str] = None
-    group: Optional[str] = None
+    faculty_id: Optional[str] = None
+    faculty_name: Optional[str] = None
+    group_id: Optional[str] = None
+    group_name: Optional[str] = None
     year: Optional[int] = None
+    level: Optional[StudyLevel] = None
     department: Optional[str] = None
     position: Optional[str] = None
     is_approved: bool

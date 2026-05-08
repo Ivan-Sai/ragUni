@@ -11,7 +11,12 @@ declare module "next-auth" {
       email: string;
       name: string;
       role: string;
-      faculty: string | null;
+      faculty_id: string | null;
+      faculty_name: string | null;
+      group_id: string | null;
+      group_name: string | null;
+      year: number | null;
+      level: "bachelor" | "master" | "phd" | null;
     };
     accessToken: string;
     error?: string;
@@ -22,7 +27,12 @@ declare module "next-auth" {
     email: string;
     name: string;
     role: string;
-    faculty: string | null;
+    faculty_id: string | null;
+    faculty_name: string | null;
+    group_id: string | null;
+    group_name: string | null;
+    year: number | null;
+    level: "bachelor" | "master" | "phd" | null;
     accessToken: string;
     refreshToken: string;
   }
@@ -31,7 +41,12 @@ declare module "next-auth" {
 declare module "@auth/core/jwt" {
   interface JWT {
     role: string;
-    faculty: string | null;
+    faculty_id: string | null;
+    faculty_name: string | null;
+    group_id: string | null;
+    group_name: string | null;
+    year: number | null;
+    level: "bachelor" | "master" | "phd" | null;
     accessToken: string;
     refreshToken: string;
     accessTokenExpires: number;
@@ -66,7 +81,12 @@ export const authOptions: NextAuthConfig = {
             email: user.email,
             name: user.full_name,
             role: user.role,
-            faculty: user.faculty,
+            faculty_id: user.faculty_id,
+            faculty_name: user.faculty_name,
+            group_id: user.group_id,
+            group_name: user.group_name,
+            year: user.year,
+            level: user.level,
             accessToken: tokens.access_token,
             refreshToken: tokens.refresh_token,
           };
@@ -85,10 +105,17 @@ export const authOptions: NextAuthConfig = {
   },
   callbacks: {
     async jwt({ token, user }) {
-      // Initial sign in — store tokens from the user object
+      // Initial sign in — store tokens and profile snapshot from the
+      // user object so subsequent session callbacks have a hot
+      // reference without an extra getMe round-trip.
       if (user) {
         token.role = user.role;
-        token.faculty = user.faculty;
+        token.faculty_id = user.faculty_id;
+        token.faculty_name = user.faculty_name;
+        token.group_id = user.group_id;
+        token.group_name = user.group_name;
+        token.year = user.year;
+        token.level = user.level;
         token.accessToken = user.accessToken;
         token.refreshToken = user.refreshToken;
         // Set expiry to 25 minutes from now (access token is 30 min)
@@ -134,7 +161,12 @@ export const authOptions: NextAuthConfig = {
         session.user.name =
           (token.name as string | undefined) ?? session.user.name;
         session.user.role = token.role as string;
-        session.user.faculty = token.faculty as string;
+        session.user.faculty_id = token.faculty_id;
+        session.user.faculty_name = token.faculty_name;
+        session.user.group_id = token.group_id;
+        session.user.group_name = token.group_name;
+        session.user.year = token.year;
+        session.user.level = token.level;
       }
       session.accessToken = token.accessToken as string;
       session.error = token.error as string | undefined;

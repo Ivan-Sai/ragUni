@@ -58,12 +58,19 @@ export function PendingTeachers({
                 className="flex items-center justify-between rounded-lg border p-3"
               >
                 <div className="space-y-1">
-                  <p className="text-sm font-medium">{teacher.full_name}</p>
+                  <p className="text-sm font-medium">
+                    {teacher.full_name}
+                    <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                      {teacher.role}
+                    </span>
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     {teacher.email}
                   </p>
-                  <div className="flex gap-2 text-xs text-muted-foreground">
-                    {teacher.faculty && <span>{teacher.faculty}</span>}
+                  <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    {teacher.faculty_name && <span>{teacher.faculty_name}</span>}
+                    {teacher.group_name && <span>· {teacher.group_name}</span>}
+                    {teacher.year && <span>· {teacher.year}</span>}
                     {teacher.department && <span>· {teacher.department}</span>}
                     {teacher.position && <span>· {teacher.position}</span>}
                   </div>

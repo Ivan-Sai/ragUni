@@ -3,8 +3,10 @@
 import logging
 import smtplib
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
+from bson import ObjectId
+from bson.errors import InvalidId
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError
@@ -21,10 +23,12 @@ from app.core.security import (
 )
 from app.core.dependencies import get_current_user
 from app.core.rate_limit import limiter
+from app.models.dictionary import StudyLevel
 from app.models.user import (
     ChangePasswordRequest,
     ForgotPasswordRequest,
     ProfileUpdateRequest,
+    RegistrationRole,
     ResetPasswordRequest,
     UserCreate,
     UserResponse,
@@ -52,12 +56,81 @@ class AccessTokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _safe_oid(value: str, field: str) -> ObjectId:
+    """Parse a dictionary id supplied by the client.
+
+    Returns 400 instead of 500 when the value is not a valid ObjectId
+    so registration / profile updates surface a usable error message.
+    """
+    try:
+        return ObjectId(value)
+    except (InvalidId, ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid {field}",
+        )
+
+
+async def _user_to_response(user: dict[str, Any]) -> UserResponse:
+    """Build the API representation of a user, resolving dictionary names."""
+    db = get_database()
+
+    faculty_name: Optional[str] = None
+    if user.get("faculty_id"):
+        faculty = await db.faculties.find_one(
+            {"_id": user["faculty_id"]}, {"name": 1}
+        )
+        if faculty:
+            # ``name`` is optional defensive — the projection requests
+            # it, but partial test fixtures sometimes return only _id.
+            faculty_name = faculty.get("name")
+
+    group_name: Optional[str] = None
+    if user.get("group_id"):
+        group = await db.groups.find_one(
+            {"_id": user["group_id"]}, {"name": 1}
+        )
+        if group:
+            group_name = group.get("name")
+
+    return UserResponse(
+        id=str(user["_id"]),
+        email=user["email"],
+        full_name=user.get("full_name", ""),
+        role=user["role"],
+        faculty_id=str(user["faculty_id"]) if user.get("faculty_id") else None,
+        faculty_name=faculty_name,
+        group_id=str(user["group_id"]) if user.get("group_id") else None,
+        group_name=group_name,
+        year=user.get("year"),
+        level=user.get("level"),
+        department=user.get("department"),
+        position=user.get("position"),
+        is_approved=bool(user.get("is_approved", False)),
+        is_active=bool(user.get("is_active", True)),
+        created_at=user.get("created_at") or datetime.now(timezone.utc),
+        updated_at=user.get("updated_at"),
+    )
+
+
 # --- Endpoints ---
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("5/minute")
 async def register(request: Request, user_data: UserCreate):
-    """Register a new user (student or teacher)."""
+    """Register a new user (student or teacher).
+
+    Both students and teachers are placed in pending state — an admin
+    must verify the supplied faculty/group/year/level before the
+    account is allowed to log in. This guarantees the audience used by
+    retrieval is a vetted fact, not user-supplied.
+    """
     db = get_database()
+
     existing = await db.users.find_one({"email": user_data.email})
     if existing:
         raise HTTPException(
@@ -65,42 +138,64 @@ async def register(request: Request, user_data: UserCreate):
             detail="User with this email already exists",
         )
 
-    now = datetime.now(timezone.utc)
-    is_approved = user_data.role != "teacher"
+    # Resolve and validate dictionary references.
+    faculty_oid = _safe_oid(user_data.faculty_id, "faculty_id")
+    if not await db.faculties.find_one({"_id": faculty_oid}, {"_id": 1}):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Faculty does not exist",
+        )
 
-    user_doc = {
+    group_oid: Optional[ObjectId] = None
+    if user_data.role == RegistrationRole.student:
+        # Mandatory by validator on UserCreate, but recheck the existence
+        # of the group + that it belongs to the chosen faculty.
+        group_oid = _safe_oid(user_data.group_id or "", "group_id")
+        group_doc = await db.groups.find_one({"_id": group_oid})
+        if not group_doc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Group does not exist",
+            )
+        if group_doc["faculty_id"] != faculty_oid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Group does not belong to the selected faculty",
+            )
+        if group_doc["level"] != user_data.level.value:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Group's study level does not match the selected level",
+            )
+
+    now = datetime.now(timezone.utc)
+
+    user_doc: dict[str, Any] = {
         "email": user_data.email,
         "hashed_password": hash_password(user_data.password),
         "full_name": user_data.full_name,
         "role": user_data.role.value if hasattr(user_data.role, "value") else user_data.role,
-        "faculty": user_data.faculty,
-        "group": user_data.group,
-        "year": user_data.year,
+        "faculty_id": faculty_oid,
+        "group_id": group_oid,
+        "year": user_data.year if user_data.role == RegistrationRole.student else None,
+        "level": (
+            user_data.level.value
+            if user_data.role == RegistrationRole.student and user_data.level
+            else None
+        ),
         "department": user_data.department,
         "position": user_data.position,
-        "is_approved": is_approved,
+        # Both students and teachers wait for an admin — only admins
+        # bypass this gate, and admins are seeded out of band.
+        "is_approved": False,
         "is_active": True,
         "created_at": now,
         "updated_at": now,
     }
 
     result = await db.users.insert_one(user_doc)
-
-    return UserResponse(
-        id=str(result.inserted_id),
-        email=user_doc["email"],
-        full_name=user_doc["full_name"],
-        role=user_doc["role"],
-        faculty=user_doc["faculty"],
-        group=user_doc["group"],
-        year=user_doc["year"],
-        department=user_doc["department"],
-        position=user_doc["position"],
-        is_approved=user_doc["is_approved"],
-        is_active=user_doc["is_active"],
-        created_at=user_doc["created_at"],
-        updated_at=user_doc["updated_at"],
-    )
+    user_doc["_id"] = result.inserted_id
+    return await _user_to_response(user_doc)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -190,21 +285,7 @@ async def refresh_token(request: Request, body: RefreshRequest):
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: dict[str, Any] = Depends(get_current_user)):
     """Get current user profile."""
-    return UserResponse(
-        id=str(current_user["_id"]),
-        email=current_user["email"],
-        full_name=current_user.get("full_name", ""),
-        role=current_user["role"],
-        faculty=current_user.get("faculty"),
-        group=current_user.get("group"),
-        year=current_user.get("year"),
-        department=current_user.get("department"),
-        position=current_user.get("position"),
-        is_approved=current_user.get("is_approved", False),
-        is_active=current_user.get("is_active", True),
-        created_at=current_user.get("created_at", datetime.now(timezone.utc)),
-        updated_at=current_user.get("updated_at"),
-    )
+    return await _user_to_response(current_user)
 
 
 # --- Password management ---
@@ -315,42 +396,30 @@ async def update_profile(
     body: ProfileUpdateRequest,
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    """Update current user's profile fields."""
+    """Update the user's own non-dictionary profile fields.
+
+    Dictionary fields (faculty / group / year / level) cannot be changed
+    self-service — only an admin may correct them via the admin
+    endpoint. This keeps the audience used by retrieval verified.
+    """
     user_role = current_user.get("role", "student")
 
-    # Build update dict from non-None fields only
     update_fields: dict[str, Any] = {}
-    for field_name in ("full_name", "faculty"):
-        value = getattr(body, field_name)
-        if value is not None:
-            update_fields[field_name] = value
 
-    # Role-specific fields
-    if user_role == "student":
-        for field_name in ("group", "year"):
-            value = getattr(body, field_name)
-            if value is not None:
-                update_fields[field_name] = value
-        if body.department is not None or body.position is not None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Students cannot update teacher fields",
-            )
-    elif user_role == "teacher":
-        for field_name in ("department", "position"):
-            value = getattr(body, field_name)
-            if value is not None:
-                update_fields[field_name] = value
-        if body.group is not None or body.year is not None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Teachers cannot update student fields",
-            )
-    elif user_role == "admin":
-        for field_name in ("group", "year", "department", "position"):
-            value = getattr(body, field_name)
-            if value is not None:
-                update_fields[field_name] = value
+    if body.full_name is not None:
+        update_fields["full_name"] = body.full_name
+
+    if user_role in ("teacher", "admin"):
+        if body.department is not None:
+            update_fields["department"] = body.department
+        if body.position is not None:
+            update_fields["position"] = body.position
+    elif body.department is not None or body.position is not None:
+        # Students cannot set teacher-only fields.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Students cannot update teacher fields",
+        )
 
     if not update_fields:
         raise HTTPException(
@@ -358,8 +427,7 @@ async def update_profile(
             detail="Немає полів для оновлення",
         )
 
-    now = datetime.now(timezone.utc)
-    update_fields["updated_at"] = now
+    update_fields["updated_at"] = datetime.now(timezone.utc)
 
     db = get_database()
     await db.users.update_one(
@@ -368,18 +436,4 @@ async def update_profile(
     )
 
     updated_user = await db.users.find_one({"_id": current_user["_id"]})
-    return UserResponse(
-        id=str(updated_user["_id"]),
-        email=updated_user["email"],
-        full_name=updated_user.get("full_name", ""),
-        role=updated_user["role"],
-        faculty=updated_user.get("faculty"),
-        group=updated_user.get("group"),
-        year=updated_user.get("year"),
-        department=updated_user.get("department"),
-        position=updated_user.get("position"),
-        is_approved=updated_user.get("is_approved", False),
-        is_active=updated_user.get("is_active", True),
-        created_at=updated_user.get("created_at", datetime.now(timezone.utc)),
-        updated_at=updated_user.get("updated_at"),
-    )
+    return await _user_to_response(updated_user)

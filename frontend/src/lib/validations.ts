@@ -13,30 +13,50 @@ export const loginSchema = z.object({
 
 export type LoginFormData = z.infer<typeof loginSchema>;
 
-export const registerSchema = z.object({
-  email: z
-    .string()
-    .min(1, "Email is required")
-    .email("Invalid email format"),
-  password: z
-    .string()
-    .min(1, "Password is required")
-    .min(8, "Password must be at least 8 characters")
-    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
-    .regex(/\d/, "Password must contain at least one digit"),
-  full_name: z
-    .string()
-    .min(1, "Full name is required"),
-  role: z.enum(["student", "teacher"]),
-  faculty: z
-    .string()
-    .min(1, "Faculty is required"),
-  group: z.string().optional(),
-  year: z.coerce.number().min(1).max(6).optional(),
-  department: z.string().optional(),
-  position: z.string().optional(),
-});
+export const registerSchema = z
+  .object({
+    email: z.string().min(1, "Email is required").email("Invalid email format"),
+    password: z
+      .string()
+      .min(1, "Password is required")
+      .min(8, "Password must be at least 8 characters")
+      .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+      .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+      .regex(/\d/, "Password must contain at least one digit"),
+    full_name: z.string().min(1, "Full name is required"),
+    role: z.enum(["student", "teacher"]),
+    faculty_id: z.string().min(1, "Faculty is required"),
+    group_id: z.string().optional(),
+    year: z.coerce.number().min(1).max(6).optional(),
+    level: z.enum(["bachelor", "master", "phd"]).optional(),
+    department: z.string().optional(),
+    position: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.role === "student") {
+      if (!data.group_id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["group_id"],
+          message: "Group is required",
+        });
+      }
+      if (!data.year) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["year"],
+          message: "Year is required",
+        });
+      }
+      if (!data.level) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["level"],
+          message: "Study level is required",
+        });
+      }
+    }
+  });
 
 export type RegisterFormData = z.infer<typeof registerSchema>;
 
@@ -81,11 +101,10 @@ export const resetPasswordSchema = z
 
 export type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>;
 
+/** Self-service profile updates — dictionary fields are intentionally
+ * absent. Only an admin may correct faculty / group / year / level. */
 export const profileUpdateSchema = z.object({
   full_name: z.string().min(1, "Full name is required"),
-  faculty: z.string().min(1, "Faculty is required"),
-  group: z.string().optional(),
-  year: z.coerce.number().min(1).max(6).optional(),
   department: z.string().optional(),
   position: z.string().optional(),
 });

@@ -70,6 +70,7 @@ export default function AdminUsersPage() {
         hasMore={hasMore}
         onBlock={blockUser}
         onChangeRole={changeRole}
+        onUserUpdated={refresh}
         onLoadMore={loadMore}
       />
     </div>

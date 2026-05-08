@@ -28,9 +28,16 @@
       "roleStudent": "Student",
       "roleTeacher": "Teacher",
       "faculty": "Faculty",
-      "facultyPlaceholder": "Faculty of Computer Science",
+      "facultyPlaceholder": "Select faculty",
+      "level": "Study level",
+      "levelPlaceholder": "Select level",
+      "levelBachelor": "Bachelor's",
+      "levelMaster": "Master's",
+      "levelPhd": "PhD",
       "group": "Group",
-      "groupPlaceholder": "CS-41",
+      "groupPlaceholder": "Select group",
+      "groupPickFacultyAndLevel": "Pick faculty and level first",
+      "groupEmpty": "No groups for this combination",
       "year": "Year",
       "yearPlaceholder": "4",
       "department": "Department",
@@ -40,7 +47,8 @@
       "submit": "Register",
       "hasAccount": "Already have an account?",
       "login": "Sign in",
-      "success": "Registration successful! Please sign in.",
+      "approvalNotice": "Your account will be reviewed by an administrator before you can sign in.",
+      "success": "Registration successful! Please wait for admin approval.",
       "serverError": "Unable to connect to the server. Please try again later.",
       "genericError": "Registration error"
     },
@@ -51,6 +59,9 @@
       "passwordMinLength": "Password must be at least 8 characters",
       "fullNameRequired": "Full name is required",
       "facultyRequired": "Faculty is required",
+      "groupRequired": "Group is required",
+      "yearRequired": "Year is required",
+      "levelRequired": "Study level is required",
       "currentPasswordRequired": "Current password is required",
       "confirmPasswordRequired": "Password confirmation is required",
       "passwordsDoNotMatch": "Passwords do not match",
@@ -119,6 +130,10 @@
       "yesterday": "Yesterday",
       "daysAgo": "d. ago"
     },
+    "personalization": {
+      "title": "Search filtered for your profile:",
+      "yearShort": "year {year}"
+    },
     "sources": {
       "title": "Sources ({count})",
       "chunk": "Part ",
@@ -133,7 +148,9 @@
       "openDocument": "Open document",
       "copied": "Copied",
       "copyFailed": "Could not copy",
-      "noSourcesWarning": "The answer was generated without document citations — verify the information in the official source."
+      "noSourcesWarning": "The answer was generated without document citations — verify the information in the official source.",
+      "uncitedHeader": "Other retrieved documents",
+      "showUncited": "Show {count} more (not directly cited)"
     },
     "preview": {
       "title": "Document preview",
@@ -183,7 +200,36 @@
       "delete": "Delete",
       "preview": "Preview",
       "previewDescription": "Document preview",
-      "previewLoadError": "Failed to load"
+      "previewLoadError": "Failed to load",
+      "loading": "Loading...",
+      "viewStructured": "Structured (LLM)",
+      "viewRaw": "Original (PDF)",
+      "noRecords": "No structured records",
+      "groupAny": "—",
+      "consultationShort": "Cons.",
+      "examShort": "Exam",
+      "llmExtractedBadge": "LLM · {count} records",
+      "recordType": {
+        "class": "Class",
+        "exam": "Exam",
+        "credit": "Credit",
+        "test": "Credit",
+        "consultation": "Consultation"
+      },
+      "loading": "Loading...",
+      "llmExtractedBadge": "LLM · {count} records",
+      "viewStructured": "Structured (LLM)",
+      "viewRaw": "Raw (PDF)",
+      "noRecords": "No structured records",
+      "consultationShort": "consult.",
+      "examShort": "exam",
+      "recordType": {
+        "class": "Class",
+        "exam": "Exam",
+        "credit": "Credit",
+        "test": "Test",
+        "consultation": "Consultation"
+      }
     },
     "upload": {
       "title": "Upload document",
@@ -192,11 +238,29 @@
       "mimeMismatch": "File type does not match extension. Allowed: ",
       "tooLarge": "File is too large. Maximum: 10 MB",
       "dropzone": "Drag a file or click to select",
-      "uploading": "Uploading...",
+      "uploading": "Uploading document...",
+      "uploadingLLM": "Running LLM extractor (up to 60 s)...",
       "upload": "Upload",
       "success": "Document uploaded",
       "error": "Upload error",
-      "errorDescription": "Error uploading document"
+      "errorDescription": "Error uploading document",
+      "audienceHint": "Pick the audience for this document. Empty group / year list means \"for everyone in the chosen faculty\".",
+      "facultyLabel": "Faculty",
+      "facultyPlaceholder": "Select faculty",
+      "facultyRequired": "Faculty is required",
+      "levelLabel": "Study level",
+      "levelAny": "Any level",
+      "groupsLabel": "Target groups",
+      "groupsHint": "(empty = all groups)",
+      "groupsPickFaculty": "Pick a faculty to see groups.",
+      "groupsEmpty": "No groups for this faculty + level.",
+      "yearsLabel": "Target years",
+      "yearsHint": "(empty = all years)",
+      "stageParse": "Parsing document...",
+      "stageClassify": "Classifying document type...",
+      "stageExtract": "Extracting structured records...",
+      "stageEmbed": "Generating embeddings and writing to the vector store...",
+      "stageFinalising": "Almost there, finalising..."
     },
     "users": {
       "title": "User Management",
@@ -206,6 +270,10 @@
       "email": "Email",
       "role": "Role",
       "faculty": "Faculty",
+      "group": "Group / year",
+      "year": "Year",
+      "department": "Department",
+      "position": "Position",
       "status": "Status",
       "registrationDate": "Registration date",
       "actions": "Actions",
@@ -225,14 +293,17 @@
       "unblock": "Unblock",
       "loadMore": "Load more",
       "loading": "Loading...",
-      "noFaculty": "—"
+      "noFaculty": "—",
+      "editTitle": "Edit {name}",
+      "editDescription": "Faculty, group, year and study level are admin-only fields.",
+      "editSuccess": "User updated"
     },
     "pending": {
       "title": "Pending Approval",
-      "description": "Teachers awaiting registration confirmation",
+      "description": "Users awaiting registration confirmation",
       "empty": "No pending requests",
-      "approved": "Teacher approved",
-      "rejected": "Teacher rejected",
+      "approved": "User approved",
+      "rejected": "User rejected",
       "userBlocked": "User blocked",
       "userUnblocked": "User unblocked",
       "roleChanged": "Role changed"
@@ -249,6 +320,50 @@
       "queriesPerDay": "Queries per day",
       "activeUsersPerDay": "Active users per day",
       "noDataForPeriod": "No data for the selected period"
+    },
+    "dictionaries": {
+      "title": "Faculties & groups",
+      "description": "Reference dictionaries used during registration and document tagging.",
+      "facultiesTitle": "Faculties",
+      "facultiesDescription": "Top-level units. A user belongs to exactly one faculty.",
+      "facultiesEmpty": "No faculties yet. Add one to get started.",
+      "addFaculty": "Add faculty",
+      "editFaculty": "Edit faculty",
+      "facultyDialogHint": "Use the official name as it appears on documents.",
+      "facultyName": "Name",
+      "facultyNamePlaceholder": "e.g. Faculty of Computer Science",
+      "facultyCreated": "Faculty created",
+      "facultyUpdated": "Faculty updated",
+      "facultyDeleted": "Faculty deleted",
+      "deleteFacultyTitle": "Delete faculty?",
+      "deleteFacultyDescription": "Faculty \"{name}\" will be removed. The action is blocked while any group or user still references it.",
+      "groupsTitle": "Groups",
+      "groupsDescription": "A group belongs to one faculty and one study level.",
+      "groupsEmpty": "No groups for this faculty yet.",
+      "addGroup": "Add group",
+      "editGroup": "Edit group",
+      "groupDialogHint": "Use the same identifier students see on their schedule (e.g. КН-41).",
+      "groupName": "Name",
+      "groupNamePlaceholder": "e.g. КН-41",
+      "groupLevel": "Study level",
+      "groupLevelPlaceholder": "Select level",
+      "groupFieldsRequired": "Name, faculty and level are all required",
+      "groupCreated": "Group created",
+      "groupUpdated": "Group updated",
+      "groupDeleted": "Group deleted",
+      "deleteGroupTitle": "Delete group?",
+      "deleteGroupDescription": "Group \"{name}\" will be removed. The action is blocked while any user or document still references it.",
+      "filterByFaculty": "Faculty",
+      "filterAllFaculties": "Select faculty",
+      "filterPickPrompt": "Pick a faculty to view its groups.",
+      "noFacultiesYet": "Add a faculty first",
+      "noFacultiesPrompt": "Create at least one faculty above to start adding groups.",
+      "nameRequired": "Name is required",
+      "level": {
+        "bachelor": "Bachelor's",
+        "master": "Master's",
+        "phd": "PhD"
+      }
     }
   },
   "profile": {
@@ -264,6 +379,7 @@
       "faculty": "Faculty",
       "group": "Group",
       "year": "Year",
+      "level": "Study level",
       "department": "Department",
       "position": "Position",
       "submit": "Save changes",
@@ -271,7 +387,8 @@
       "loadError": "Failed to load profile",
       "noChanges": "No changes to save",
       "success": "Profile updated",
-      "serverError": "Error updating profile"
+      "serverError": "Error updating profile",
+      "lockedFieldsHint": "Faculty, group, year and study level are managed by the administrator. Contact them to change these fields."
     }
   },
   "layout": {
@@ -283,6 +400,7 @@
       "adminPanel": "Panel",
       "documents": "Documents",
       "users": "Users",
+      "dictionaries": "Faculties & groups",
       "analytics": "Analytics"
     },
     "header": {
@@ -316,6 +434,11 @@
   },
   "common": {
     "unknownError": "Unknown error",
-    "kb": "KB"
+    "kb": "KB",
+    "loading": "Loading...",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit"
   }
 }

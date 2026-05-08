@@ -37,6 +37,7 @@ from app.api.v1 import auth as auth_router_module
 from app.api.v1 import admin as admin_router_module
 from app.api.v1 import chat_history as chat_history_module
 from app.api.v1 import feedback as feedback_module
+from app.api.v1 import dictionaries as dictionaries_module
 
 
 @asynccontextmanager
@@ -149,6 +150,12 @@ app.include_router(
     feedback_module.router,
     prefix="/api/v1/chat",
     tags=["Feedback"]
+)
+
+app.include_router(
+    dictionaries_module.router,
+    prefix="/api/v1/dictionaries",
+    tags=["Dictionaries"]
 )
 
 

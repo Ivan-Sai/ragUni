@@ -25,6 +25,22 @@ const ZOD_ERROR_MAP: Record<string, Record<string, string>> = {
   faculty: {
     too_small: "facultyRequired",
   },
+  faculty_id: {
+    too_small: "facultyRequired",
+    custom: "facultyRequired",
+  },
+  group_id: {
+    too_small: "groupRequired",
+    custom: "groupRequired",
+  },
+  year: {
+    too_small: "yearRequired",
+    custom: "yearRequired",
+  },
+  level: {
+    invalid_enum_value: "levelRequired",
+    custom: "levelRequired",
+  },
   current_password: {
     too_small: "currentPasswordRequired",
   },

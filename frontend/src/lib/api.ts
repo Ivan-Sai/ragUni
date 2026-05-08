@@ -8,6 +8,7 @@ import type {
   ForgotPasswordData,
   ResetPasswordData,
   ProfileUpdateData,
+  AdminUserUpdateData,
   MessageResponse,
   FeedbackData,
   FeedbackResponse,
@@ -20,8 +21,15 @@ import type {
   DocumentsListResponse,
   DocumentDeleteResponse,
   DocumentUploadResponse,
+  DocumentUploadOptions,
   DocumentPreviewResponse,
   DocumentStats,
+  FacultyResponse,
+  FacultyCreateData,
+  GroupResponse,
+  GroupCreateData,
+  GroupUpdateData,
+  StudyLevel,
   SystemHealth,
   UserRole,
 } from "@/types/api";
@@ -304,6 +312,14 @@ export const adminApi = {
     );
   },
 
+  async updateUser(
+    userId: string,
+    data: AdminUserUpdateData,
+    token: string,
+  ): Promise<UserResponse> {
+    return apiClient.put<UserResponse>(`/admin/users/${userId}`, data, { token });
+  },
+
   async getFeedbackStats(token: string): Promise<FeedbackStats> {
     return apiClient.get<FeedbackStats>("/chat/feedback/stats", { token });
   },
@@ -331,10 +347,18 @@ export const documentsApi = {
 
   async upload(
     file: File,
-    token: string
+    token: string,
+    options: DocumentUploadOptions,
   ): Promise<DocumentUploadResponse> {
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("access_level", options.accessLevel);
+    formData.append("faculty_id", options.facultyId);
+    formData.append("target_group_ids", JSON.stringify(options.targetGroupIds));
+    formData.append("target_years", JSON.stringify(options.targetYears));
+    if (options.targetLevel) {
+      formData.append("target_level", options.targetLevel);
+    }
 
     const url = `${API_BASE_URL}${API_PREFIX}/documents/upload`;
     const response = await fetch(url, {
@@ -378,5 +402,95 @@ export const documentsApi = {
 
   async getHealth(token: string): Promise<SystemHealth> {
     return apiClient.get<SystemHealth>("/chat/health", { token });
+  },
+};
+
+/**
+ * Faculty / Group reference dictionaries.
+ *
+ * Read endpoints have a public variant ("/public") so the registration
+ * form can populate dropdowns before the user has a token. Write
+ * endpoints (create / update / delete) are admin-only.
+ */
+export const dictionariesApi = {
+  async listFacultiesPublic(): Promise<FacultyResponse[]> {
+    return apiClient.get<FacultyResponse[]>("/dictionaries/faculties/public");
+  },
+
+  async listFaculties(token: string): Promise<FacultyResponse[]> {
+    return apiClient.get<FacultyResponse[]>("/dictionaries/faculties", { token });
+  },
+
+  async createFaculty(
+    data: FacultyCreateData,
+    token: string,
+  ): Promise<FacultyResponse> {
+    return apiClient.post<FacultyResponse>("/dictionaries/faculties", data, {
+      token,
+    });
+  },
+
+  async updateFaculty(
+    id: string,
+    data: FacultyCreateData,
+    token: string,
+  ): Promise<FacultyResponse> {
+    return apiClient.put<FacultyResponse>(
+      `/dictionaries/faculties/${id}`,
+      data,
+      { token },
+    );
+  },
+
+  async deleteFaculty(id: string, token: string): Promise<void> {
+    await apiClient.delete<void>(`/dictionaries/faculties/${id}`, { token });
+  },
+
+  async listGroupsPublic(
+    facultyId?: string,
+    level?: StudyLevel,
+  ): Promise<GroupResponse[]> {
+    const params = new URLSearchParams();
+    if (facultyId) params.append("faculty_id", facultyId);
+    if (level) params.append("level", level);
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return apiClient.get<GroupResponse[]>(`/dictionaries/groups/public${query}`);
+  },
+
+  async listGroups(
+    token: string,
+    facultyId?: string,
+    level?: StudyLevel,
+  ): Promise<GroupResponse[]> {
+    const params = new URLSearchParams();
+    if (facultyId) params.append("faculty_id", facultyId);
+    if (level) params.append("level", level);
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return apiClient.get<GroupResponse[]>(`/dictionaries/groups${query}`, {
+      token,
+    });
+  },
+
+  async createGroup(
+    data: GroupCreateData,
+    token: string,
+  ): Promise<GroupResponse> {
+    return apiClient.post<GroupResponse>("/dictionaries/groups", data, {
+      token,
+    });
+  },
+
+  async updateGroup(
+    id: string,
+    data: GroupUpdateData,
+    token: string,
+  ): Promise<GroupResponse> {
+    return apiClient.put<GroupResponse>(`/dictionaries/groups/${id}`, data, {
+      token,
+    });
+  },
+
+  async deleteGroup(id: string, token: string): Promise<void> {
+    await apiClient.delete<void>(`/dictionaries/groups/${id}`, { token });
   },
 };

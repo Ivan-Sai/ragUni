@@ -4,15 +4,26 @@ import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
+import { Lock } from "lucide-react";
+
 import { authApi } from "@/lib/api";
 import type { UserResponse } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+/**
+ * Profile editor.
+ *
+ * Dictionary fields (faculty / group / year / level) are shown for
+ * read-only context but cannot be edited self-service — only an admin
+ * can change them via /admin/users/{id}. We display them with a small
+ * lock icon and a hint banner so users know who to contact.
+ */
 export function ProfileForm() {
   const { data: session } = useSession();
   const t = useTranslations("profile.form");
+  const tDict = useTranslations("admin.dictionaries");
   const token = session?.accessToken || "";
   const role = session?.user?.role;
 
@@ -22,9 +33,6 @@ export function ProfileForm() {
   const [error, setError] = useState("");
 
   const [fullName, setFullName] = useState("");
-  const [faculty, setFaculty] = useState("");
-  const [group, setGroup] = useState("");
-  const [year, setYear] = useState("");
   const [department, setDepartment] = useState("");
   const [position, setPosition] = useState("");
 
@@ -35,9 +43,6 @@ export function ProfileForm() {
       .then((u) => {
         setUser(u);
         setFullName(u.full_name);
-        setFaculty(u.faculty || "");
-        setGroup(u.group || "");
-        setYear(u.year ? String(u.year) : "");
         setDepartment(u.department || "");
         setPosition(u.position || "");
       })
@@ -51,14 +56,8 @@ export function ProfileForm() {
     setError("");
     setSaving(true);
 
-    const data: Record<string, string | number> = {};
+    const data: Record<string, string> = {};
     if (fullName !== user?.full_name) data.full_name = fullName;
-    if (faculty !== (user?.faculty || "")) data.faculty = faculty;
-
-    if (role === "student" || role === "admin") {
-      if (group !== (user?.group || "")) data.group = group;
-      if (year && Number(year) !== user?.year) data.year = Number(year);
-    }
     if (role === "teacher" || role === "admin") {
       if (department !== (user?.department || "")) data.department = department;
       if (position !== (user?.position || "")) data.position = position;
@@ -75,8 +74,7 @@ export function ProfileForm() {
       setUser(updated);
       toast.success(t("success"));
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : t("serverError");
+      const message = err instanceof Error ? err.message : t("serverError");
       setError(message);
     } finally {
       setSaving(false);
@@ -94,14 +92,17 @@ export function ProfileForm() {
           {error}
         </p>
       )}
+
       <div className="space-y-2">
         <Label htmlFor="email">{t("email")}</Label>
         <Input id="email" value={user?.email || ""} disabled />
       </div>
+
       <div className="space-y-2">
         <Label htmlFor="role">{t("role")}</Label>
         <Input id="role" value={user?.role || ""} disabled />
       </div>
+
       <div className="space-y-2">
         <Label htmlFor="full_name">{t("fullName")}</Label>
         <Input
@@ -110,34 +111,58 @@ export function ProfileForm() {
           onChange={(e) => setFullName(e.target.value)}
         />
       </div>
+
+      {role !== "admin" && (
+        <div className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          <Lock className="mr-1 inline h-3 w-3" />
+          {t("lockedFieldsHint")}
+        </div>
+      )}
+
       <div className="space-y-2">
-        <Label htmlFor="faculty">{t("faculty")}</Label>
+        <Label htmlFor="faculty" className="flex items-center gap-1">
+          <Lock className="h-3 w-3 text-muted-foreground" />
+          {t("faculty")}
+        </Label>
         <Input
           id="faculty"
-          value={faculty}
-          onChange={(e) => setFaculty(e.target.value)}
+          value={user?.faculty_name || ""}
+          disabled
+          aria-readonly
         />
       </div>
 
-      {(role === "student" || role === "admin") && (
+      {(role === "student" || (role === "admin" && user?.group_id)) && (
         <>
           <div className="space-y-2">
-            <Label htmlFor="group">{t("group")}</Label>
+            <Label htmlFor="group" className="flex items-center gap-1">
+              <Lock className="h-3 w-3 text-muted-foreground" />
+              {t("group")}
+            </Label>
             <Input
               id="group"
-              value={group}
-              onChange={(e) => setGroup(e.target.value)}
+              value={user?.group_name || ""}
+              disabled
+              aria-readonly
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="year">{t("year")}</Label>
+            <Label htmlFor="year" className="flex items-center gap-1">
+              <Lock className="h-3 w-3 text-muted-foreground" />
+              {t("year")}
+            </Label>
+            <Input id="year" value={user?.year ?? ""} disabled aria-readonly />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="level" className="flex items-center gap-1">
+              <Lock className="h-3 w-3 text-muted-foreground" />
+              {t("level")}
+            </Label>
             <Input
-              id="year"
-              type="number"
-              min={1}
-              max={6}
-              value={year}
-              onChange={(e) => setYear(e.target.value)}
+              id="level"
+              value={user?.level ? tDict(`level.${user.level}`) : ""}
+              disabled
+              aria-readonly
             />
           </div>
         </>

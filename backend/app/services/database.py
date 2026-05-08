@@ -53,6 +53,11 @@ async def create_database_indexes():
         await db.db.documents.create_index([("uploaded_at", -1)])
         await db.db.documents.create_index([("file_type", 1), ("uploaded_at", -1)])
         await db.db.documents.create_index([("access_level", 1)])
+        # Audience targeting indexes — used by the document list filter
+        # so admins/teachers can quickly review documents per group.
+        await db.db.documents.create_index([("target_group_ids", 1)])
+        await db.db.documents.create_index([("target_years", 1)])
+        await db.db.documents.create_index([("target_level", 1)])
 
         # Chat history indexes
         await db.db.chat_history.create_index([("user_id", 1), ("updated_at", -1)])
@@ -60,6 +65,22 @@ async def create_database_indexes():
 
         # User indexes
         await db.db.users.create_index([("email", 1)], unique=True)
+        # Used by dictionary delete-guard to detect users still pointing
+        # at a faculty/group the admin tries to remove.
+        await db.db.users.create_index([("faculty_id", 1)])
+        await db.db.users.create_index([("group_id", 1)])
+
+        # Faculty/Group reference dictionaries.
+        # Case-insensitive uniqueness via the *_lower mirror field — the
+        # service writes the value once and queries against the indexed
+        # mirror, sidestepping MongoDB's lack of true case-insensitive
+        # unique indexes outside collation indexes (which would still
+        # require us to specify collation on every query).
+        await db.db.faculties.create_index([("name_lower", 1)], unique=True)
+        await db.db.groups.create_index(
+            [("faculty_id", 1), ("name_lower", 1)], unique=True
+        )
+        await db.db.groups.create_index([("level", 1)])
 
         # Analytics indexes
         await db.db.analytics_events.create_index([("timestamp", -1)])

@@ -2,14 +2,52 @@
 
 export type UserRole = "student" | "teacher" | "admin";
 
+export type StudyLevel = "bachelor" | "master" | "phd";
+
+export interface FacultyResponse {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GroupResponse {
+  id: string;
+  name: string;
+  faculty_id: string;
+  faculty_name: string | null;
+  level: StudyLevel;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FacultyCreateData {
+  name: string;
+}
+
+export interface GroupCreateData {
+  name: string;
+  faculty_id: string;
+  level: StudyLevel;
+}
+
+export interface GroupUpdateData {
+  name?: string;
+  faculty_id?: string;
+  level?: StudyLevel;
+}
+
 export interface UserResponse {
   id: string;
   email: string;
   full_name: string;
   role: UserRole;
-  faculty: string | null;
-  group: string | null;
+  faculty_id: string | null;
+  faculty_name: string | null;
+  group_id: string | null;
+  group_name: string | null;
   year: number | null;
+  level: StudyLevel | null;
   department: string | null;
   position: string | null;
   is_approved: boolean;
@@ -33,10 +71,12 @@ export interface RegisterData {
   email: string;
   password: string;
   full_name: string;
-  role: UserRole;
-  faculty: string;
-  group?: string;
+  role: "student" | "teacher";
+  faculty_id: string;
+  /** Mandatory when role === "student". */
+  group_id?: string;
   year?: number;
+  level?: StudyLevel;
   department?: string;
   position?: string;
 }
@@ -68,9 +108,18 @@ export interface ResetPasswordData {
 
 export interface ProfileUpdateData {
   full_name?: string;
-  faculty?: string;
-  group?: string;
+  department?: string;
+  position?: string;
+}
+
+/** Admin-only profile edit — adds dictionary fields the user cannot
+ * change themselves. */
+export interface AdminUserUpdateData {
+  full_name?: string;
+  faculty_id?: string;
+  group_id?: string;
   year?: number;
+  level?: StudyLevel;
   department?: string;
   position?: string;
 }
@@ -119,12 +168,31 @@ export interface ChatSource {
   page?: number;
 }
 
+/** A single LLM-extracted record. Shape depends on the source document
+ * (class slot, exam, credit, …) — see app/services/llm_extractor.py
+ * for conventional keys. We keep it loose on purpose so unfamiliar
+ * fields still render. */
+export type StructuredRecord = Record<string, string | number | null>;
+
 export interface DocumentPreviewResponse {
   id: string;
   filename: string;
   file_type: string;
   total_chunks: number;
+  /** Original parser output — what pdfplumber / docx / pandas saw. */
   text: string;
+  /**
+   * One-line-per-record rendering produced by the LLM extractor when
+   * the admin uploaded with the "complex schedule" flag. Null when
+   * the document was indexed as raw text.
+   */
+  structured_text: string | null;
+  /** Same data as structured_text but as JSON — the preview UI renders
+   * these as cards instead of forcing the user to read flat key:value
+   * lines. */
+  structured_records: StructuredRecord[];
+  extraction_method: "raw" | "llm";
+  structured_records_count: number;
 }
 
 export interface ChatMessage {
@@ -184,6 +252,11 @@ export interface DocumentInfo {
   id: string;
   filename: string;
   file_type: string;
+  access_level: string;
+  faculty_id: string | null;
+  target_group_ids: string[];
+  target_years: number[];
+  target_level: StudyLevel | null;
   uploaded_at: string;
   total_chunks: number;
 }
@@ -203,9 +276,28 @@ export interface DocumentUploadResponse {
   id: string;
   filename: string;
   file_type: string;
+  access_level: string;
+  faculty_id: string;
+  faculty_name: string | null;
+  target_group_ids: string[];
+  target_group_names: string[];
+  target_years: number[];
+  target_level: StudyLevel | null;
   uploaded_at: string;
   total_chunks: number;
   message: string;
+}
+
+/** Audience targeting payload that the upload form must supply.
+ * The backend classifier picks the right extractor automatically —
+ * the upload form no longer asks the admin to label complex tables
+ * by hand. */
+export interface DocumentUploadOptions {
+  facultyId: string;
+  targetGroupIds: string[];
+  targetYears: number[];
+  targetLevel: StudyLevel | null;
+  accessLevel: "public" | "faculty" | "restricted";
 }
 
 export interface VectorStoreStats {
