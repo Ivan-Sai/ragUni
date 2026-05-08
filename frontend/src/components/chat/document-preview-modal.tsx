@@ -11,7 +11,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { documentsApi } from "@/lib/api";
 import type { DocumentPreviewResponse } from "@/types/api";
 
@@ -96,7 +95,9 @@ export function DocumentPreviewModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl w-[min(95vw,72rem)] max-h-[85vh] flex flex-col gap-3">
+      <DialogContent
+        className="!max-w-[min(95vw,72rem)] sm:!max-w-[min(90vw,72rem)] max-h-[85vh] flex flex-col gap-3"
+      >
         <DialogHeader className="space-y-1">
           <DialogTitle className="flex items-center gap-2 pr-8">
             <FileIcon type={doc?.file_type ?? "txt"} className="h-5 w-5" />
@@ -112,22 +113,28 @@ export function DocumentPreviewModal({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 min-h-0 rounded border bg-muted/30">
-          <div className="px-4 py-3">
-            {loading ? (
-              <div className="flex items-center justify-center py-12 text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {t("loading")}
-              </div>
-            ) : error ? (
-              <p className="py-12 text-center text-sm text-destructive">
-                {error}
-              </p>
-            ) : doc ? (
-              <DocumentBody text={doc.text} highlight={highlight ?? null} />
-            ) : null}
-          </div>
-        </ScrollArea>
+        {/*
+          Plain overflow-y-auto instead of Radix ScrollArea: the latter
+          needs an explicit height to know what to scroll, and inside a
+          flex column the height it computes via flex-1 + min-h-0 ends
+          up unconstrained on some browsers — content then overflows
+          past the dialog. A native scroll container with min-h-0 just
+          works.
+        */}
+        <div className="flex-1 min-h-0 overflow-y-auto rounded border bg-muted/30 px-4 py-3">
+          {loading ? (
+            <div className="flex items-center justify-center py-12 text-muted-foreground">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              {t("loading")}
+            </div>
+          ) : error ? (
+            <p className="py-12 text-center text-sm text-destructive">
+              {error}
+            </p>
+          ) : doc ? (
+            <DocumentBody text={doc.text} highlight={highlight ?? null} />
+          ) : null}
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -180,16 +187,11 @@ function findHighlightRange(
     if (start === -1) return null;
   }
 
-  // Extend the range to roughly the chunk length, but cap at the next
-  // paragraph boundary so the highlight doesn't bleed past the end of
-  // the cited fragment.
-  const tentativeEnd = Math.min(start + cleaned.length, text.length);
-  const paraBreak = text.indexOf("\n\n", start + 40);
-  const end =
-    paraBreak !== -1 && paraBreak < tentativeEnd + 200
-      ? paraBreak
-      : tentativeEnd;
-
+  // Highlight spans the full chunk preview length. Chunks legitimately
+  // straddle paragraph breaks ("--- Page N ---" markers, table rows,
+  // section headers), so clamping at the next "\n\n" leaves visible
+  // gaps and was the source of the patchy highlight in the modal.
+  const end = Math.min(start + cleaned.length, text.length);
   return { start, end };
 }
 

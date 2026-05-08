@@ -192,18 +192,35 @@ export function useChat({ token, sessionId: initialSessionId = null }: UseChatOp
             return;
           }
 
-          const assistantMessage: ChatMessage = {
-            role: "assistant",
-            content: "",
-            sources: [],
-            timestamp: new Date().toISOString(),
-          };
-
-          setMessages((prev) => [...prev, assistantMessage]);
-
           if (response.body) {
             let fullContent = "";
             let sources: ChatSource[] = [];
+            // The assistant bubble is added LAZILY — only when the
+            // first SSE event (token or sources) arrives. This way
+            // the loading indicator stays visible alone while the
+            // backend is thinking, instead of showing an empty
+            // bubble next to a "Loading..." pill.
+            let bubbleAdded = false;
+
+            const ensureBubble = () => {
+              if (bubbleAdded) return;
+              bubbleAdded = true;
+              // Apply any sources that arrived BEFORE the first
+              // token — those were buffered into the closure-local
+              // ``sources`` variable. The bubble enters the DOM
+              // already populated, so the user never sees a flash
+              // of sources without the answer.
+              const initialSources = [...sources];
+              setMessages((prev) => [
+                ...prev,
+                {
+                  role: "assistant",
+                  content: "",
+                  sources: initialSources,
+                  timestamp: new Date().toISOString(),
+                },
+              ]);
+            };
 
             // Batched state updates to reduce re-renders during streaming
             let pendingContent = "";
@@ -226,6 +243,7 @@ export function useChat({ token, sessionId: initialSessionId = null }: UseChatOp
             await parseSSEStream(
               response.body,
               (tokenText) => {
+                ensureBubble();
                 fullContent += tokenText;
                 pendingContent += tokenText;
                 if (!batchTimeout) {
@@ -234,12 +252,21 @@ export function useChat({ token, sessionId: initialSessionId = null }: UseChatOp
               },
               (newSources) => {
                 sources = newSources;
-                setMessages((prev) => {
-                  const updated = [...prev];
-                  const last = updated[updated.length - 1];
-                  updated[updated.length - 1] = { ...last, sources };
-                  return updated;
-                });
+                // Sources can arrive before the first token — but we
+                // still wait to add the bubble until the answer
+                // starts streaming, so the user sees the loading
+                // indicator alone instead of a sources card next to
+                // a "Loading..." pill. The buffered ``sources``
+                // local will be applied in ``ensureBubble`` and
+                // every subsequent flush.
+                if (bubbleAdded) {
+                  setMessages((prev) => {
+                    const updated = [...prev];
+                    const last = updated[updated.length - 1];
+                    updated[updated.length - 1] = { ...last, sources };
+                    return updated;
+                  });
+                }
               },
               (newSessionId) => {
                 setSessionId(newSessionId);
@@ -268,15 +295,28 @@ export function useChat({ token, sessionId: initialSessionId = null }: UseChatOp
               });
             }
 
+            // Treat a silently-closed stream as an error too — if the
+            // server crashes between sending the response headers and
+            // emitting any token, we'd otherwise leave the user with
+            // a perpetual loading indicator and no feedback.
+            if (!sseErrorMessage && fullContent.length === 0) {
+              sseErrorMessage = t("serverError");
+            }
+
             if (sseErrorMessage) {
               setError(sseErrorMessage);
-              setMessages((prev) => {
-                const last = prev[prev.length - 1];
-                if (last?.role === "assistant" && last.content === "") {
-                  return prev.slice(0, -1);
-                }
-                return prev;
-              });
+              // If the bubble hadn't been added yet (no token ever
+              // arrived) there's nothing to remove; if it was added
+              // but stayed empty, drop it.
+              if (bubbleAdded) {
+                setMessages((prev) => {
+                  const last = prev[prev.length - 1];
+                  if (last?.role === "assistant" && last.content === "") {
+                    return prev.slice(0, -1);
+                  }
+                  return prev;
+                });
+              }
               break;
             }
           }
@@ -294,6 +334,9 @@ export function useChat({ token, sessionId: initialSessionId = null }: UseChatOp
             break;
           }
 
+          // Drop a half-built empty bubble if one was added — most
+          // network errors fire BEFORE any token arrived, so usually
+          // there's nothing to remove.
           setMessages((prev) => {
             const last = prev[prev.length - 1];
             if (last?.role === "assistant" && last.content === "") {

@@ -180,7 +180,9 @@ export function ChatMessageBubble({
           </div>
         )}
 
-        {hasSources && <SourceCitation sources={sources} />}
+        {hasSources && (
+          <SourceCitation sources={sources} answerText={message.content} />
+        )}
         {showNoSourcesWarning && <NoSourcesWarning />}
 
         {canFeedback && (

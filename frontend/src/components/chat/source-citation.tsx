@@ -25,6 +25,9 @@ import { DocumentPreviewModal } from "./document-preview-modal";
 
 interface SourceCitationProps {
   sources: ChatSource[];
+  /** Assistant answer text — used to count how often each [N] is cited
+   * so the most-mentioned source bubbles to the top of the list. */
+  answerText?: string;
 }
 
 interface IndexedSource extends ChatSource {
@@ -41,6 +44,10 @@ interface GroupedSource {
   /** Smallest citation index across the group's chunks — used to label the
    * card header with the lowest-numbered citation pointing at this file. */
   primaryIndex: number;
+  /** Total number of [N] mentions in the assistant's answer that point
+   * at any chunk in this group. Drives the outer sort so heavily-cited
+   * documents appear first regardless of vector ranking. */
+  mentions: number;
 }
 
 function FileIcon({
@@ -69,20 +76,39 @@ function FileIcon({
  * (matching the [N] markers the LLM emitted) so anchor links survive
  * the regrouping.
  */
-function groupSources(sources: ChatSource[]): GroupedSource[] {
+function countCitations(answer: string): Map<number, number> {
+  const counts = new Map<number, number>();
+  if (!answer) return counts;
+  const re = /\[(\d+)\]/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(answer)) !== null) {
+    const n = Number(match[1]);
+    if (!Number.isInteger(n) || n < 1) continue;
+    counts.set(n, (counts.get(n) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function groupSources(
+  sources: ChatSource[],
+  answerText?: string,
+): GroupedSource[] {
   const indexed: IndexedSource[] = sources.map((s, i) => ({
     ...s,
     citationIndex: i + 1,
   }));
+  const citationCounts = countCitations(answerText ?? "");
 
   const map = new Map<string, GroupedSource>();
   for (const s of indexed) {
     const existing = map.get(s.source_file);
     const score = s.score ?? 0;
+    const mentions = citationCounts.get(s.citationIndex) ?? 0;
     if (existing) {
       existing.chunks.push(s);
       existing.topScore = Math.max(existing.topScore, score);
       existing.primaryIndex = Math.min(existing.primaryIndex, s.citationIndex);
+      existing.mentions += mentions;
       if (!existing.document_id && s.document_id) {
         existing.document_id = s.document_id;
       }
@@ -93,33 +119,35 @@ function groupSources(sources: ChatSource[]): GroupedSource[] {
         document_id: s.document_id,
         topScore: score,
         primaryIndex: s.citationIndex,
+        mentions,
         chunks: [s],
       });
     }
   }
-  // Sort each group's chunks by their original citation index so the
-  // expanded card lists chunks in the same order the LLM cited them.
+  // Each group's chunks list in original citation order.
   for (const group of map.values()) {
     group.chunks.sort((a, b) => a.citationIndex - b.citationIndex);
   }
-  // Outer sort: by primary citation index so the card numbered with the
-  // lowest [N] appears first, mirroring the order in the answer.
-  return Array.from(map.values()).sort(
-    (a, b) => a.primaryIndex - b.primaryIndex,
-  );
+  // Outer sort: most-cited group first. When citations are tied (or
+  // absent — e.g. answer didn't use the [N] format) fall back to the
+  // primary citation index so we still mirror the LLM's ordering.
+  return Array.from(map.values()).sort((a, b) => {
+    if (b.mentions !== a.mentions) return b.mentions - a.mentions;
+    return a.primaryIndex - b.primaryIndex;
+  });
 }
 
 function SourceGroup({
   group,
-  index,
   onOpen,
 }: {
   group: GroupedSource;
-  index: number;
   onOpen: (documentId: string, highlight: string) => void;
 }) {
   const t = useTranslations("chat.sources");
-  const [open, setOpen] = useState(index === 0); // first group expanded
+  // All groups start collapsed; the user expands the one they care
+  // about either by clicking it or by clicking [N] in the answer.
+  const [open, setOpen] = useState(false);
 
   // Listen for hash-driven anchor jumps so a click on [N] in the answer
   // expands the right card before the browser scrolls to it.
@@ -249,11 +277,38 @@ function SourceGroup({
   );
 }
 
-export function SourceCitation({ sources }: SourceCitationProps) {
+export function SourceCitation({ sources, answerText }: SourceCitationProps) {
   const t = useTranslations("chat.sources");
-  const groups = useMemo(() => groupSources(sources), [sources]);
+  const allGroups = useMemo(
+    () => groupSources(sources, answerText),
+    [sources, answerText],
+  );
+
+  // Split into "actually cited" and "retrieved but not cited". When the
+  // LLM didn't use the [N] format at all we fall back to showing every
+  // group so the user is never left wondering where the answer came
+  // from.
+  const { cited, uncited } = useMemo(() => {
+    const c = allGroups.filter((g) => g.mentions > 0);
+    const u = allGroups.filter((g) => g.mentions === 0);
+    if (c.length === 0) return { cited: u, uncited: [] as GroupedSource[] };
+    return { cited: c, uncited: u };
+  }, [allGroups]);
+
+  const [outerOpen, setOuterOpen] = useState(false);
+  const [showUncited, setShowUncited] = useState(false);
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
   const [activeHighlight, setActiveHighlight] = useState<string | null>(null);
+
+  // A click on [N] in the answer auto-opens the outer toggle so the
+  // target card actually exists in the layout when we scroll to it.
+  React.useEffect(() => {
+    function handleAnchor() {
+      setOuterOpen(true);
+    }
+    window.addEventListener("citation-jump", handleAnchor);
+    return () => window.removeEventListener("citation-jump", handleAnchor);
+  }, []);
 
   if (!sources.length) return null;
 
@@ -263,18 +318,54 @@ export function SourceCitation({ sources }: SourceCitationProps) {
   }
 
   return (
-    <div className="mt-3 space-y-1.5">
-      <p className="text-xs font-medium text-muted-foreground">
-        {t("title", { count: groups.length })}
-      </p>
-      {groups.map((group, idx) => (
-        <SourceGroup
-          key={group.source_file}
-          group={group}
-          index={idx}
-          onOpen={handleOpen}
-        />
-      ))}
+    <div className="mt-3">
+      <Collapsible open={outerOpen} onOpenChange={setOuterOpen}>
+        <CollapsibleTrigger className="flex w-full items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+          <span>{t("title", { count: cited.length })}</span>
+          <ChevronDown
+            className={cn(
+              "h-3.5 w-3.5 transition-transform",
+              outerOpen && "rotate-180",
+            )}
+          />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="mt-2 space-y-1.5">
+          {cited.map((group) => (
+            <SourceGroup
+              key={group.source_file}
+              group={group}
+              onOpen={handleOpen}
+            />
+          ))}
+
+          {uncited.length > 0 && (
+            <>
+              {showUncited ? (
+                <>
+                  <p className="pt-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+                    {t("uncitedHeader")}
+                  </p>
+                  {uncited.map((group) => (
+                    <SourceGroup
+                      key={group.source_file}
+                      group={group}
+                      onOpen={handleOpen}
+                    />
+                  ))}
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="text-[11px] text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
+                  onClick={() => setShowUncited(true)}
+                >
+                  {t("showUncited", { count: uncited.length })}
+                </button>
+              )}
+            </>
+          )}
+        </CollapsibleContent>
+      </Collapsible>
 
       <DocumentPreviewModal
         documentId={activeDocId}

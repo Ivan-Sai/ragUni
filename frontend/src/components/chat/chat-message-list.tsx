@@ -5,7 +5,6 @@ import { MessageSquare } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChatMessageBubble } from "./chat-message";
-import { Skeleton } from "@/components/ui/skeleton";
 import type { ChatMessage } from "@/types/api";
 
 interface ChatMessageListProps {
@@ -31,12 +30,25 @@ function EmptyState() {
 
 function LoadingIndicator() {
   const t = useTranslations("chat.messages");
+  // Three-dot "typing" animation reuses Tailwind's bounce keyframe
+  // staggered by negative animation-delays. Goes alongside an
+  // explicit text label so the user understands the request is alive
+  // even before the first SSE token lands (which can be several
+  // seconds for Atlas Vector Search + first LLM token).
   return (
     <div className="flex gap-3 px-4 py-3" aria-label={t("loading")}>
-      <Skeleton className="h-8 w-8 rounded-full shrink-0" />
-      <div className="space-y-2 flex-1 max-w-[60%]">
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-3/4" />
+      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+        <span className="text-xs font-semibold text-primary">A</span>
+      </div>
+      <div className="flex-1 space-y-1">
+        <p className="text-xs font-medium text-muted-foreground">
+          {t("loading")}
+        </p>
+        <div className="flex items-center gap-1">
+          <span className="h-2 w-2 rounded-full bg-primary/60 animate-bounce [animation-delay:-0.3s]" />
+          <span className="h-2 w-2 rounded-full bg-primary/60 animate-bounce [animation-delay:-0.15s]" />
+          <span className="h-2 w-2 rounded-full bg-primary/60 animate-bounce" />
+        </div>
       </div>
     </div>
   );
@@ -54,13 +66,24 @@ export function ChatMessageList({ messages, isLoading, sessionId }: ChatMessageL
     return <EmptyState />;
   }
 
+  // Show the typing dots ONLY before the first token arrives. Once
+  // the assistant bubble has content, the streaming text itself is
+  // the progress signal — leaving the indicator on would render as
+  // a duplicate "loading" widget below an already-complete answer.
+  const lastMessage = messages[messages.length - 1];
+  const isWaitingForFirstToken =
+    isLoading &&
+    (!lastMessage ||
+      lastMessage.role === "user" ||
+      (lastMessage.role === "assistant" && lastMessage.content.length === 0));
+
   return (
-    <ScrollArea className="flex-1">
+    <ScrollArea className="flex-1 min-h-0">
       <div className="py-4" role="log" aria-live="polite" aria-label={t("ariaLabel")}>
         {messages.map((message, index) => (
           <ChatMessageBubble key={`${message.role}-${index}-${message.timestamp}`} message={message} messageIndex={index} sessionId={sessionId} />
         ))}
-        {isLoading && <LoadingIndicator />}
+        {isWaitingForFirstToken && <LoadingIndicator />}
         <div ref={bottomRef} />
       </div>
     </ScrollArea>

@@ -128,3 +128,16 @@
     font-family: var(--font-jetbrains), ui-monospace, monospace;
   }
 }
+
+/* Indeterminate upload progress — slides a slug across the track. */
+@keyframes uploadbar {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(150%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
