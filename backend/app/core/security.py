@@ -162,19 +162,36 @@ def decode_token(token: str) -> dict[str, Any]:
     above — even if ``ALGORITHM`` were tampered with at startup, the
     decoder would still refuse anything outside ``_ALLOWED_ALGORITHMS``.
 
+    python-jose's ``options`` map uses per-claim ``require_<name>`` /
+    ``verify_<name>`` flags rather than a single ``require`` list, so
+    we enumerate each required claim explicitly. After decoding we
+    additionally enforce a non-empty ``sub`` and ``type`` because
+    python-jose's verifier accepts empty strings for those.
+
     Raises ``JWTError`` (or subclass) on any failure — caller must catch
     and translate to 401.
     """
     if ALGORITHM not in _ALLOWED_ALGORITHMS:
         raise JWTError(f"Refusing to decode with non-whitelisted alg {ALGORITHM!r}")
-    return jwt.decode(
+    payload = jwt.decode(
         token,
         SECRET_KEY,
         algorithms=[ALGORITHM],
         audience=JWT_AUDIENCE,
         issuer=JWT_ISSUER,
-        options={"require": ["exp", "iat", "iss", "aud", "sub", "type"]},
+        options={
+            "require_aud": True,
+            "require_iat": True,
+            "require_exp": True,
+            "require_iss": True,
+            "require_sub": True,
+        },
     )
+    if not payload.get("sub"):
+        raise JWTError("Token missing or empty 'sub' claim")
+    if not payload.get("type"):
+        raise JWTError("Token missing or empty 'type' claim")
+    return payload
 
 
 # --- Password reset tokens ---
@@ -232,7 +249,13 @@ def verify_password_reset_token(token: str) -> str:
         algorithms=[ALGORITHM],
         audience=JWT_AUDIENCE,
         issuer=JWT_ISSUER,
-        options={"require": ["exp", "iat", "iss", "aud", "sub", "type"]},
+        options={
+            "require_aud": True,
+            "require_iat": True,
+            "require_exp": True,
+            "require_iss": True,
+            "require_sub": True,
+        },
     )
     if payload.get("type") != "password_reset":
         raise JWTError("Token is not a password reset token")

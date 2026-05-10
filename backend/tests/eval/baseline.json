@@ -1,0 +1,10 @@
+{
+  "_comment": "Frozen retrieval baseline — once the eval dataset has real chunk IDs and the corpus is populated, run `python -m tests.eval.run_retrieval` and copy the aggregate scores here. CI then fails the moment retrieval quality regresses below these thresholds. Until then, the regression test (test_retrieval_baseline.py) is skipped.",
+  "k": 5,
+  "thresholds": {
+    "recall_at_5": 0.65,
+    "precision_at_5": 0.40,
+    "mrr": 0.55,
+    "ndcg_at_5": 0.60
+  }
+}
