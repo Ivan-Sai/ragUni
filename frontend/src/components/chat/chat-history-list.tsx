@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { MessageSquare, Trash2, Plus } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import {
   SidebarGroup,
@@ -24,7 +24,11 @@ interface ChatHistoryListProps {
   onNewChat: () => void;
 }
 
-function formatDate(dateStr: string, t: (key: string) => string): string {
+function formatDate(
+  dateStr: string,
+  t: (key: string) => string,
+  locale: string,
+): string {
   const date = new Date(dateStr);
   if (isNaN(date.getTime())) return "";
 
@@ -35,7 +39,9 @@ function formatDate(dateStr: string, t: (key: string) => string): string {
   if (days === 0) return t("today");
   if (days === 1) return t("yesterday");
   if (days < 7) return `${days} ${t("daysAgo")}`;
-  return date.toLocaleDateString("uk-UA", { day: "numeric", month: "short" });
+  // Localised month names from the active app locale rather than the
+  // hardcoded "uk-UA" the early prototype shipped with.
+  return date.toLocaleDateString(locale, { day: "numeric", month: "short" });
 }
 
 export function ChatHistoryList({
@@ -46,6 +52,7 @@ export function ChatHistoryList({
   onNewChat,
 }: ChatHistoryListProps) {
   const t = useTranslations("chat.history");
+  const locale = useLocale();
   return (
     <SidebarGroup>
       <SidebarGroupLabel className="flex items-center justify-between">
@@ -86,7 +93,7 @@ export function ChatHistoryList({
                       {session.title || t("untitled")}
                     </span>
                     <span className="text-[10px] text-muted-foreground">
-                      {formatDate(session.updated_at, t)}
+                      {formatDate(session.updated_at, t, locale)}
                     </span>
                   </div>
                 </SidebarMenuButton>

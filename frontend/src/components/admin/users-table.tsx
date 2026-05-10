@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Ban, Pencil, ShieldCheck } from "lucide-react";
 import {
   Table,
@@ -45,8 +45,11 @@ interface UsersTableProps {
   onLoadMore?: () => void;
 }
 
-function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString("uk-UA", {
+function formatDate(dateString: string, locale: string): string {
+  // Locale comes from useLocale() so an English admin sees English
+  // months. Hardcoding "uk-UA" used to render Ukrainian dates for
+  // every user regardless of UI language.
+  return new Date(dateString).toLocaleDateString(locale, {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -63,6 +66,7 @@ export function UsersTable({
   onLoadMore,
 }: UsersTableProps) {
   const t = useTranslations("admin.users");
+  const locale = useLocale();
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<UserResponse | null>(null);
 
@@ -176,7 +180,7 @@ export function UsersTable({
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>{formatDate(user.created_at)}</TableCell>
+                  <TableCell>{formatDate(user.created_at, locale)}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       <Button

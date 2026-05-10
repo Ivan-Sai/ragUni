@@ -31,22 +31,69 @@ import type {
   GroupUpdateData,
   StudyLevel,
   SystemHealth,
+  AnalyticsSummary,
   UserRole,
 } from "@/types/api";
 import { API_BASE_URL, API_PREFIX } from "@/lib/env";
 
+/**
+ * Stable error codes thrown by the API layer.
+ *
+ * The strings are intentionally English / kebab-case rather than
+ * localised UI copy — components MUST translate them via
+ * `useTranslations()` (CLAUDE.md i18n rule) instead of rendering
+ * the code directly. Server-supplied detail strings are only
+ * preserved for 4xx client errors where the message is meant for
+ * the user (e.g. validation failures); 5xx detail is replaced
+ * with `server_error` so internal exceptions never leak.
+ */
 class ApiError extends Error {
   status: number;
+  /** Stable machine code: `network_error`, `timeout`, `server_error`, etc. */
+  code: string;
 
-  constructor(message: string, status: number) {
-    super(message);
+  constructor(code: string, status: number, message?: string) {
+    super(message ?? code);
     this.name = "ApiError";
     this.status = status;
+    this.code = code;
   }
 }
 
 interface RequestOptions {
   token?: string;
+  /** Override the per-request timeout in milliseconds. */
+  timeoutMs?: number;
+}
+
+const DEFAULT_TIMEOUT_MS = 15_000;
+
+/**
+ * Decide whether a fetch failure is worth retrying. Network blips,
+ * AbortErrors with a synthetic timeout signal, and TypeErrors raised
+ * by the platform when DNS or TCP fails all qualify. Application-level
+ * errors (4xx/5xx HTTP responses) are NOT retried here — the call
+ * site decides what to do with them.
+ */
+function isTransientFetchFailure(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === "AbortError") return true;
+  if (err instanceof TypeError) return true; // browser network errors
+  return false;
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  // AbortSignal.timeout() is supported in all modern browsers + Node 20+.
+  // It auto-aborts if the request takes longer than `timeoutMs` ms,
+  // surfacing a DOMException(name="AbortError") that we map to an
+  // ApiError("timeout") below.
+  return fetch(url, {
+    ...init,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
 }
 
 async function request<T>(
@@ -56,6 +103,7 @@ async function request<T>(
   options?: RequestOptions & { headers?: Record<string, string> }
 ): Promise<T> {
   const url = `${API_BASE_URL}${API_PREFIX}${path}`;
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   const headers: Record<string, string> = {
     ...(options?.headers || {}),
@@ -65,7 +113,6 @@ async function request<T>(
     headers["Authorization"] = `Bearer ${options.token}`;
   }
 
-  // Default to JSON content type for non-form requests
   if (body && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
@@ -83,40 +130,67 @@ async function request<T>(
     }
   }
 
-  const response = await fetch(url, config);
-
-  if (!response.ok) {
-    // If an authenticated request comes back 401 the token is no longer
-    // valid (expired, revoked, or signed with a different secret). The
-    // session is dead — sign the user out so the UI falls back to the
-    // login screen instead of rendering half-broken pages. Skipped on
-    // the server and for unauthenticated calls so the login form can
-    // still surface "wrong password" errors as 401.
-    if (
-      response.status === 401 &&
-      Boolean(options?.token) &&
-      typeof window !== "undefined"
-    ) {
-      const { signOut } = await import("next-auth/react");
-      await signOut({ callbackUrl: "/login" });
-    }
-
-    let detail = "Помилка сервера";
+  // Idempotent GETs get one transparent retry on transient network
+  // failures. Non-idempotent verbs (POST/PUT/DELETE) are NOT retried
+  // because we can't tell whether the server processed the request
+  // before the connection died; double-charging or double-deleting is
+  // worse than a visible failure.
+  const maxAttempts = method === "GET" ? 2 : 1;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const errorData = await response.json();
-      if (errorData.detail && typeof errorData.detail === "string") {
-        // Only show server messages for client errors (4xx), not server errors (5xx)
-        if (response.status >= 400 && response.status < 500) {
-          detail = errorData.detail;
-        }
-      }
-    } catch {
-      // JSON parse failed — response may not be JSON
-    }
-    throw new ApiError(detail, response.status);
-  }
+      const response = await fetchWithTimeout(url, config, timeoutMs);
 
-  return response.json();
+      if (!response.ok) {
+        // 401 on an authenticated request means the session is dead —
+        // sign the user out so the UI doesn't keep stale state.
+        if (
+          response.status === 401 &&
+          Boolean(options?.token) &&
+          typeof window !== "undefined"
+        ) {
+          const { signOut } = await import("next-auth/react");
+          await signOut({ callbackUrl: "/login" });
+        }
+
+        let code = response.status >= 500 ? "server_error" : "request_failed";
+        let serverMessage: string | undefined;
+        try {
+          const errorData = await response.json();
+          if (
+            errorData?.detail &&
+            typeof errorData.detail === "string" &&
+            response.status >= 400 &&
+            response.status < 500
+          ) {
+            serverMessage = errorData.detail;
+            code = "request_failed";
+          }
+        } catch {
+          /* response wasn't JSON — keep the generic code */
+        }
+        throw new ApiError(code, response.status, serverMessage);
+      }
+
+      return response.json();
+    } catch (err) {
+      lastErr = err;
+      if (err instanceof ApiError) throw err;
+      if (attempt < maxAttempts && isTransientFetchFailure(err)) {
+        // Linear backoff is fine here — the user is waiting and we
+        // only retry once. A 250 ms gap is enough to clear most
+        // transient DNS / TCP hiccups without blocking the UI.
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        continue;
+      }
+      if (err instanceof DOMException && err.name === "AbortError") {
+        throw new ApiError("timeout", 0, "Request timed out");
+      }
+      throw new ApiError("network_error", 0, "Network request failed");
+    }
+  }
+  // Unreachable, but TypeScript needs it.
+  throw lastErr ?? new ApiError("network_error", 0);
 }
 
 export const apiClient = {
@@ -220,6 +294,10 @@ export const chatApi = {
   },
 
   async askQuestion(data: AskRequest, token: string): Promise<Response> {
+    // SSE streaming — caller owns the response body and passes its
+    // own AbortSignal for cancellation. We don't apply the shared
+    // 15 s timeout here because LLM responses can legitimately stream
+    // for 30-60 s; the chat hook handles its own watchdog.
     const url = `${API_BASE_URL}${API_PREFIX}/chat/ask/stream`;
     const response = await fetch(url, {
       method: "POST",
@@ -231,19 +309,25 @@ export const chatApi = {
     });
 
     if (!response.ok) {
-      let detail = "Помилка сервера";
+      let code = response.status >= 500 ? "server_error" : "request_failed";
+      let serverMessage: string | undefined;
       try {
         const errorData = await response.json();
-        if (errorData.detail) {
-          detail = errorData.detail;
+        if (
+          errorData?.detail &&
+          typeof errorData.detail === "string" &&
+          response.status >= 400 &&
+          response.status < 500
+        ) {
+          serverMessage = errorData.detail;
+          code = "request_failed";
         }
       } catch (parseError) {
-        // JSON parse failed — response may not be JSON
         if (process.env.NODE_ENV === "development") {
           console.warn("Failed to parse chat error response as JSON:", parseError);
         }
       }
-      throw new ApiError(detail, response.status);
+      throw new ApiError(code, response.status, serverMessage);
     }
 
     return response;
@@ -324,9 +408,10 @@ export const adminApi = {
     return apiClient.get<FeedbackStats>("/chat/feedback/stats", { token });
   },
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async getAnalytics(token: string, days = 30): Promise<any> {
-    return apiClient.get(`/admin/analytics?days=${days}`, { token });
+  async getAnalytics(token: string, days = 30): Promise<AnalyticsSummary> {
+    return apiClient.get<AnalyticsSummary>(`/admin/analytics?days=${days}`, {
+      token,
+    });
   },
 };
 
@@ -370,17 +455,25 @@ export const documentsApi = {
     });
 
     if (!response.ok) {
-      let detail = "Помилка завантаження";
+      let code = response.status >= 500 ? "server_error" : "upload_failed";
+      let serverMessage: string | undefined;
       try {
         const errorData = await response.json();
-        if (errorData.detail) detail = errorData.detail;
+        if (
+          errorData?.detail &&
+          typeof errorData.detail === "string" &&
+          response.status >= 400 &&
+          response.status < 500
+        ) {
+          serverMessage = errorData.detail;
+          code = "upload_failed";
+        }
       } catch (parseError) {
-        // JSON parse failed — response may not be JSON
         if (process.env.NODE_ENV === "development") {
           console.warn("Failed to parse upload error response as JSON:", parseError);
         }
       }
-      throw new ApiError(detail, response.status);
+      throw new ApiError(code, response.status, serverMessage);
     }
 
     return response.json();

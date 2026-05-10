@@ -319,35 +319,31 @@ export interface DocumentStats {
 
 // --- System health ---
 
-export interface HealthComponents {
-  database: "connected" | string;
-  vector_store: "initialized" | string;
-  llm: "configured" | "unhealthy" | string;
-}
-
-export interface HealthStatistics {
-  documents_count: number;
-  total_chunks: number;
-  unique_documents: number;
-  embedding_model: string;
-  embedding_dimension: number;
-  chunk_size: number;
-  chunk_overlap: number;
-}
-
 export interface HealthConfiguration {
-  embedding_model: string;
-  llm_model: string;
-  chunk_size: number;
-  chunk_overlap: number;
-  top_k_results: number;
+  embedding_model: string | null;
+  llm_model: string | null;
 }
 
 export interface SystemHealth {
   status: "healthy" | "unhealthy";
-  components: HealthComponents;
-  statistics: HealthStatistics;
-  configuration: HealthConfiguration;
-  /** Present only when status is "unhealthy" */
-  error?: string;
+  timestamp: string;
+  documents_count: number | null;
+  vector_store_initialized: boolean;
+  configuration: HealthConfiguration | null;
+}
+
+// --- Analytics ---
+
+export interface DailyCount {
+  date: string;
+  count: number;
+}
+
+export interface AnalyticsSummary {
+  total_queries: number;
+  total_logins: number;
+  total_uploads: number;
+  queries_per_day: DailyCount[];
+  active_users_per_day: DailyCount[];
+  avg_response_time: number | null;
 }

@@ -20,6 +20,31 @@ const ALLOWED_ELEMENTS = [
 ];
 
 /**
+ * Returns true iff the URL is safe to render as an external `<a href>`.
+ *
+ * `react-markdown` rejects `javascript:` by default, but `data:`,
+ * `vbscript:`, `file:` and protocol-relative `//evil.com` slip through.
+ * Allowing only `http(s)://` and `mailto:` removes that vector
+ * regardless of what the LLM or an indexed document tries to sneak in.
+ */
+function isSafeExternalHref(href: string | undefined): href is string {
+  if (!href) return false;
+  const trimmed = href.trim();
+  if (!trimmed) return false;
+  // Block protocol-relative URLs ("//evil.com/x") which inherit the
+  // page protocol and can read auth cookies on http sites.
+  if (trimmed.startsWith("//")) return false;
+  try {
+    // URL parsing requires a base for relative URLs; we only consider
+    // absolute hrefs safe, so a parse failure rejects.
+    const u = new URL(trimmed);
+    return u.protocol === "http:" || u.protocol === "https:" || u.protocol === "mailto:";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Replace `[N]` markers in the assistant's answer with markdown links
  * pointing to anchors generated for each source. The link's href uses
  * the format `#src-N`; the SourceCitation component renders matching
@@ -161,6 +186,16 @@ export function ChatMessageBubble({
                         {children}
                       </a>
                     );
+                  }
+                  // External link — sanitise the protocol so an
+                  // LLM-injected or document-injected
+                  // [click](javascript:alert(1)) cannot smuggle a
+                  // script-execution vector into the chat. Only
+                  // explicit http(s) and mailto: are allowed; relative
+                  // links and other schemes (data:, vbscript:, file:)
+                  // are dropped to a non-clickable span.
+                  if (!isSafeExternalHref(href)) {
+                    return <span {...props}>{children}</span>;
                   }
                   return (
                     <a

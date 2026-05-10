@@ -388,6 +388,7 @@
       "noChanges": "No changes to save",
       "success": "Profile updated",
       "serverError": "Error updating profile",
+      "validationError": "Some fields are too long or invalid",
       "lockedFieldsHint": "Faculty, group, year and study level are managed by the administrator. Contact them to change these fields."
     }
   },

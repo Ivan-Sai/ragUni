@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Trash2, FileText, FileSpreadsheet, File, Eye } from "lucide-react";
 import {
   Table,
@@ -46,8 +46,11 @@ const fileTypeBadge: Record<string, "default" | "secondary" | "outline"> = {
   xlsx: "outline",
 };
 
-function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString("uk-UA", {
+function formatDate(dateString: string, locale: string): string {
+  // Use the active app locale from next-intl rather than hardcoding
+  // "uk-UA" — an English-speaking admin should see English month
+  // names. CLAUDE.md i18n rule.
+  return new Date(dateString).toLocaleDateString(locale, {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -62,6 +65,7 @@ export function DocumentsTable({
   onDelete,
 }: DocumentsTableProps) {
   const t = useTranslations("admin.documents");
+  const locale = useLocale();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [previewDoc, setPreviewDoc] = useState<{ id: string; filename: string } | null>(null);
 
@@ -120,7 +124,7 @@ export function DocumentsTable({
                     </Badge>
                   </TableCell>
                   <TableCell>{doc.total_chunks}</TableCell>
-                  <TableCell>{formatDate(doc.uploaded_at)}</TableCell>
+                  <TableCell>{formatDate(doc.uploaded_at, locale)}</TableCell>
                   <TableCell className="text-right">
                     <Button
                       variant="ghost"

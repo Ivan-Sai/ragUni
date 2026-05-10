@@ -7,7 +7,8 @@ import { useTranslations } from "next-intl";
 import { Lock } from "lucide-react";
 
 import { authApi } from "@/lib/api";
-import type { UserResponse } from "@/types/api";
+import type { ProfileUpdateData, UserResponse } from "@/types/api";
+import { profileUpdateSchema } from "@/lib/validations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -56,7 +57,9 @@ export function ProfileForm() {
     setError("");
     setSaving(true);
 
-    const data: Record<string, string> = {};
+    // Build a typed diff payload — only include fields the user
+    // actually changed, mirroring the backend's "noChanges" guard.
+    const data: ProfileUpdateData = {};
     if (fullName !== user?.full_name) data.full_name = fullName;
     if (role === "teacher" || role === "admin") {
       if (department !== (user?.department || "")) data.department = department;
@@ -69,8 +72,19 @@ export function ProfileForm() {
       return;
     }
 
+    // Run client-side validation BEFORE the network call so the user
+    // gets an immediate error on too-long values instead of a 422
+    // round-trip. The Zod schema mirrors the backend caps.
+    const parsed = profileUpdateSchema.safeParse(data);
+    if (!parsed.success) {
+      const firstIssue = parsed.error.issues[0];
+      setError(firstIssue?.message ?? t("validationError"));
+      setSaving(false);
+      return;
+    }
+
     try {
-      const updated = await authApi.updateProfile(data, token);
+      const updated = await authApi.updateProfile(parsed.data, token);
       setUser(updated);
       toast.success(t("success"));
     } catch (err) {

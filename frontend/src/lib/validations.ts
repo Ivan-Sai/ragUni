@@ -102,11 +102,16 @@ export const resetPasswordSchema = z
 export type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>;
 
 /** Self-service profile updates — dictionary fields are intentionally
- * absent. Only an admin may correct faculty / group / year / level. */
+ * absent. Only an admin may correct faculty / group / year / level.
+ *
+ * The max-length caps mirror the backend Pydantic model (200 chars).
+ * Keep them in sync so client-side validation surfaces the same error
+ * the server would return.
+ */
 export const profileUpdateSchema = z.object({
-  full_name: z.string().min(1, "Full name is required"),
-  department: z.string().optional(),
-  position: z.string().optional(),
+  full_name: z.string().min(1, "Full name is required").max(200),
+  department: z.string().max(200).optional(),
+  position: z.string().max(200).optional(),
 });
 
 export type ProfileUpdateFormData = z.infer<typeof profileUpdateSchema>;
