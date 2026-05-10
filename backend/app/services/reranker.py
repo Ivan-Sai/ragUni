@@ -103,10 +103,18 @@ async def rerank(
     """
     if not candidates:
         return []
-    if len(candidates) <= top_n:
-        # Fewer candidates than requested — reranking can't change
-        # the selection, only the order. Skipping saves a round-trip.
+    if len(candidates) == 1:
+        # One candidate is one candidate — reranking buys nothing.
         return candidates
+
+    # Even when len(candidates) <= top_n we still rerank, because
+    # reranking ALSO drops candidates that score 0 ("not relevant
+    # at all"). Skipping when len <= top_n meant a query whose
+    # retrieval returned 18 noisy chunks would force all 18 into
+    # the LLM context — the prompt instructs the model to be
+    # exhaustive, so it dutifully invents records to "match" the
+    # noise. Drop relevance < relevance_floor below.
+    relevance_floor = 1.0  # 0..10 scale; <1 = "not relevant"
 
     user_prompt = _build_user_prompt(query, candidates)
     try:
@@ -130,17 +138,31 @@ async def rerank(
     indexed.sort(
         key=lambda pair: (-scores.get(pair[0], 0.0), pair[0]),
     )
-    selected = [doc for _, doc in indexed[:top_n]]
+
+    # Drop candidates below the relevance floor BEFORE truncating to
+    # top_n. If everything looks irrelevant, keep the single highest-
+    # scored one — better one weak source than no answer at all.
+    survivors = [
+        (idx, doc) for idx, doc in indexed
+        if scores.get(idx, 0.0) >= relevance_floor
+    ]
+    if not survivors:
+        survivors = indexed[:1]
+
+    selected_pairs = survivors[:top_n]
+    selected = [doc for _, doc in selected_pairs]
+
     # Stamp the rerank score into metadata so downstream components
     # (UI, logging, evals) can inspect it.
-    for original_index, doc in indexed[:top_n]:
+    for original_index, doc in selected_pairs:
         doc.metadata["rerank_score"] = float(scores.get(original_index, 0.0))
+
     logger.info(
-        "Reranker: %d -> %d, top score=%.1f, threshold=%.1f",
+        "Reranker: %d -> %d (floor=%.1f), top score=%.1f",
         len(candidates),
         len(selected),
+        relevance_floor,
         max(scores.values(), default=0.0),
-        scores.get(indexed[top_n - 1][0], 0.0) if len(indexed) >= top_n else 0.0,
     )
     return selected
 

@@ -150,9 +150,20 @@ async def _run_vector(
     *,
     k: int,
 ) -> list[LCDocument]:
-    """Pure vector similarity with score thresholding. Reuses the
-    existing service so we don't duplicate the E5 prefix wrapper /
-    boost logic."""
+    """Pure vector similarity, hard-filtered by ``vector_score_threshold``.
+
+    Atlas Vector Search returns ``k`` nearest neighbours by cosine
+    similarity. Without a hard score floor a query like
+    "what is the timetable?" still produces 20 results — but the bottom
+    half score 0.4-0.5 (off-topic noise). Letting that noise into the
+    LLM prompt is exactly how grounded RAG starts hallucinating: the
+    no-answer guard fires only when the *max* score is below threshold,
+    so a single 0.56 chunk passes 19 noise chunks through.
+
+    Filtering at the orchestrator boundary means RRF fusion only ever
+    sees defensible vector matches, the reranker has fewer adversarial
+    inputs, and the LLM context stays clean.
+    """
     timeout = float(settings.llm_timeout_seconds)
     try:
         scored = await asyncio.wait_for(
@@ -165,11 +176,24 @@ async def _run_vector(
         logger.warning("Vector retrieval timed out")
         return []
 
+    threshold = float(settings.vector_score_threshold)
     docs: list[LCDocument] = []
+    dropped = 0
     for doc, score in scored:
-        doc.metadata["score"] = float(score)
+        score_f = float(score)
+        if score_f < threshold:
+            dropped += 1
+            continue
+        doc.metadata["score"] = score_f
         doc.metadata["retrieval_strategy"] = "vector"
         docs.append(doc)
+    if dropped:
+        logger.debug(
+            "Vector retrieval: dropped %d/%d below threshold %.2f",
+            dropped,
+            len(scored),
+            threshold,
+        )
     return docs
 
 

@@ -19,7 +19,19 @@ db = Database()
 
 
 async def connect_to_mongo():
-    """Connect to MongoDB"""
+    """Connect to MongoDB and ensure required indexes exist.
+
+    Behaviour by environment:
+
+    * In **production** (``settings.environment == "production"``) any
+      connect / index-create failure is fatal — the lifespan hook
+      re-raises and uvicorn exits with non-zero. Starting an API that
+      cannot reach its database means every request returns 500 and
+      the orchestrator never knows the deploy failed.
+    * In **development** the connect failure is downgraded to a warning
+      so a developer can boot the service against a missing local
+      Mongo and still iterate on imports / type checks.
+    """
     try:
         db.client = AsyncIOMotorClient(
             settings.mongodb_url,
@@ -39,11 +51,14 @@ async def connect_to_mongo():
         await create_database_indexes()
         await ensure_vector_search_index()
 
-    except (ConnectionFailure, ConfigurationError) as e:
+    except (ConnectionFailure, ConfigurationError, OperationFailure) as e:
+        if settings.environment == "production":
+            logger.error("MongoDB unreachable during startup: %s", e)
+            # Fail-fast in production — the orchestrator should restart
+            # us / fail the deploy rather than serve 500s.
+            raise
         logger.warning("Could not connect to MongoDB: %s", e)
         logger.warning("Service will start but database operations will fail")
-    except OperationFailure as e:
-        logger.warning("MongoDB operation failed during startup: %s", e)
 
 
 async def create_database_indexes():
@@ -92,6 +107,39 @@ async def create_database_indexes():
             unique=True,
         )
         await db.db.feedback.create_index([("created_at", -1)])
+
+        # Audit log — primary access patterns are "newest first" and
+        # "filtered by actor / resource". TTL keeps the collection
+        # bounded so a long-running deployment doesn't blow up storage.
+        await db.db.audit_logs.create_index([("timestamp", -1)])
+        await db.db.audit_logs.create_index(
+            [("resource_type", 1), ("resource_id", 1), ("timestamp", -1)]
+        )
+        await db.db.audit_logs.create_index([("actor_id", 1), ("timestamp", -1)])
+        # 365-day retention. If you need longer for compliance, raise
+        # this and document the new policy.
+        await db.db.audit_logs.create_index(
+            [("timestamp", 1)], expireAfterSeconds=365 * 24 * 3600
+        )
+
+        # Document chunks — joined back to the document via document_id
+        # for delete operations and against source_file for legacy
+        # lookups. Both should be indexed.
+        await db.db.document_chunks.create_index([("document_id", 1)])
+        await db.db.document_chunks.create_index([("source_file", 1)])
+
+        # Documents — uploader lookup for the per-user "your uploads"
+        # listing, plus uploader-scoped delete-permission check.
+        await db.db.documents.create_index([("uploaded_by_id", 1)])
+
+        # Refresh-token allowlist — checked on every /auth/refresh by
+        # ``jti``, periodically swept by TTL so revoked / expired
+        # entries don't accumulate forever.
+        await db.db.refresh_tokens.create_index([("jti", 1)], unique=True)
+        await db.db.refresh_tokens.create_index([("user_id", 1)])
+        await db.db.refresh_tokens.create_index(
+            [("expires_at", 1)], expireAfterSeconds=0
+        )
 
         logger.info("Database indexes created")
 

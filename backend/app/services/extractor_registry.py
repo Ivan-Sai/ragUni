@@ -193,6 +193,7 @@ class Extractor(ABC):
         text: str,
         filename: str,
         document_context: str,
+        file_content: Optional[bytes] = None,
     ) -> ExtractionResult:
         """Produce chunks (and optional records) from ``text``.
 
@@ -201,6 +202,13 @@ class Extractor(ABC):
         to each chunk before embedding (Anthropic Contextual
         Retrieval) or ignore it for row-style chunks where the
         context comes from the row's structured fields.
+
+        ``file_content`` is the raw upload bytes — only the schedule
+        extractor uses it (for its deterministic per-column parser).
+        Other extractors ignore it. Passing it as a per-call argument
+        rather than a setter keeps the registry instances stateless
+        and concurrent uploads from corrupting one another's
+        intermediate state.
         """
 
 
@@ -232,29 +240,23 @@ class _ScheduleExtractor(Extractor):
 
     method = "schedule_deterministic"
 
-    def __init__(self, file_content_provider=None):
-        # Set by the upload endpoint via ``set_file_content`` so the
-        # extractor can call back into pdfplumber on the same bytes.
-        # We keep this off the public interface — only schedule
-        # extraction needs the raw PDF, the others operate on text.
-        self._file_content_provider = file_content_provider
-
-    def set_file_content(self, file_bytes: bytes) -> None:
-        self._file_bytes = file_bytes
-
     async def extract(
         self,
         *,
         text: str,
         filename: str,
         document_context: str,
+        file_content: Optional[bytes] = None,
     ) -> ExtractionResult:
-        # Try the deterministic parser first.
+        # Try the deterministic parser first when raw PDF bytes are
+        # available. ``file_content`` is per-call — no shared mutable
+        # state on the extractor instance, so two concurrent uploads
+        # cannot mix bytes between each other's calls.
         cells: list = []
-        if hasattr(self, "_file_bytes") and self._file_bytes:
+        if file_content:
             from app.services.document_parser import DocumentParser
 
-            cells = await DocumentParser.extract_schedule_cells(self._file_bytes)
+            cells = await DocumentParser.extract_schedule_cells(file_content)
 
         if cells:
             records = await _refine_cells_with_llm(cells, filename=filename)
@@ -470,6 +472,7 @@ class _RegulationExtractor(Extractor):
         text: str,
         filename: str,
         document_context: str,
+        file_content: Optional[bytes] = None,
     ) -> ExtractionResult:
         sections = self._split_sections(text)
         if not sections:
@@ -562,6 +565,7 @@ class _CurriculumExtractor(Extractor):
         text: str,
         filename: str,
         document_context: str,
+        file_content: Optional[bytes] = None,
     ) -> ExtractionResult:
         # Reuse the regulation splitting machinery — only the regex
         # differs. We monkey-replace the SECTION_RE for one call by
@@ -613,6 +617,7 @@ class _RecursiveProseExtractor(Extractor):
         text: str,
         filename: str,
         document_context: str,
+        file_content: Optional[bytes] = None,
     ) -> ExtractionResult:
         pieces = self.split_recursive(text)
         chunks: list[tuple[str, dict[str, Any]]] = []

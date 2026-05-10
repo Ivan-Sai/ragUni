@@ -529,8 +529,39 @@ class VectorStoreService:
     # Delete
     # ------------------------------------------------------------------
 
-    async def delete_by_metadata(self, filter_query: dict) -> int:
-        """Delete documents by metadata filter — async-safe."""
+    async def delete_by_document_id(self, document_id: str) -> int:
+        """Delete every chunk that belongs to a given document.
+
+        We join on the immutable per-upload ``document_id`` (an
+        ObjectId stamped into chunk metadata at ingest time) instead
+        of ``source_file``. Joining on filename is unsafe — two
+        uploads with the same filename would share chunks, and
+        deleting one would silently nuke the other's chunks.
+
+        ``document_id`` is the canonical identifier; use it
+        everywhere. The legacy ``delete_by_metadata`` is kept private
+        and only called by reindex / migration scripts that need
+        broader filters.
+        """
+        if not document_id:
+            raise ValueError("document_id is required")
+
+        def _delete() -> int:
+            result = self._collection.delete_many({"document_id": document_id})
+            return result.deleted_count
+
+        return await asyncio.to_thread(_delete)
+
+    async def _delete_by_metadata_unsafe(self, filter_query: dict) -> int:
+        """Delete by an arbitrary metadata filter — for migrations only.
+
+        Prefer ``delete_by_document_id`` for any user-facing operation
+        — it cannot be coerced into deleting another upload's chunks
+        through filename collision. This signature is kept solely so
+        cleanup scripts can target chunks by alternate criteria.
+        """
+        if not filter_query:
+            raise ValueError("Empty filter — refusing to delete every chunk")
 
         def _delete() -> int:
             result = self._collection.delete_many(filter_query)

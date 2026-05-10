@@ -42,22 +42,37 @@ from app.api.v1 import dictionaries as dictionaries_module
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan events for startup and shutdown"""
-    # Startup
+    """Lifespan events for startup and shutdown.
+
+    Startup is intentionally fail-fast in production: a deploy that
+    cannot reach MongoDB or load the embedding model should NOT serve
+    traffic — every subsequent request would 500 anyway. ``connect_to_mongo``
+    re-raises in production, and we move the heavy embedder load
+    (~2 GB, several seconds) into the startup hook via
+    ``asyncio.to_thread`` so the first user request doesn't pay the
+    cost on a cold worker.
+    """
+    import asyncio as _asyncio
+
     logger.info("Starting University Knowledge API...")
     await connect_to_mongo()
 
-    # Initialize LangChain Vector Store (non-blocking — will retry on first request)
+    # Warm the embedder + vector store. ``initialize`` is synchronous
+    # and CPU-bound — running it in a worker thread keeps the event
+    # loop responsive while the model downloads / loads.
     try:
         from app.services.vector_store import vector_store_service
-        vector_store_service.initialize()
+        await _asyncio.to_thread(vector_store_service.initialize)
+        logger.info("Embedding model warm; vector store ready")
     except (ConnectionFailure, OSError, ValueError) as e:
-        logger.error("Vector store initialization failed: %s", type(e).__name__)
-        logger.info("Vector store will attempt re-initialization on first request")
+        if _settings.environment == "production":
+            logger.error("Vector store initialization failed: %s", type(e).__name__)
+            raise
+        logger.warning("Vector store init failed in dev (%s) — will retry per request", type(e).__name__)
 
     logger.info("All services initialized")
     yield
-    # Shutdown
+
     logger.info("Shutting down...")
     await close_mongo_connection()
 
@@ -76,20 +91,29 @@ register_error_handlers(app)
 # Rate limiting
 register_rate_limiter(app)
 
-# Security headers middleware
+# Security headers — the API only ever serves JSON / SSE responses,
+# never HTML, so the frontend's nonce-based CSP doesn't apply. We keep
+# a narrow set of hardening headers so /docs (Swagger UI) and any
+# direct API consumer still benefit.
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response: Response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        if _settings.environment == "production":
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+        # Strict CSP for the API surface: no scripts at all (this server
+        # never returns HTML/JS bundles to a browser), can't be framed,
+        # forms can only submit back to self.
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
+            "default-src 'none'; "
             "frame-ancestors 'none'; "
-            "form-action 'self'"
+            "form-action 'self'; "
+            "base-uri 'none'"
         )
         return response
 

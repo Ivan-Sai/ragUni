@@ -16,6 +16,7 @@ from app.models.audit import (
     AuditLogListResponse,
 )
 from app.models.dictionary import StudyLevel
+from app.models.responses import AnalyticsSummaryResponse, DailyCount
 from app.models.user import (
     AdminUserUpdateRequest,
     UserResponse,
@@ -482,14 +483,28 @@ async def list_audit_logs(
     )
 
 
-@router.get("/analytics")
+@router.get("/analytics", response_model=AnalyticsSummaryResponse)
 @limiter.limit("20/minute")
 async def get_analytics(
     request: Request,
     days: int = Query(30, ge=1, le=365),
     current_user: dict[str, Any] = Depends(admin_only),
-):
+) -> AnalyticsSummaryResponse:
     """Get usage analytics (admin only)."""
     from app.services.analytics import get_summary
 
-    return await get_summary(days=days)
+    summary = await get_summary(days=days)
+    return AnalyticsSummaryResponse(
+        total_queries=summary.get("total_queries", 0),
+        total_logins=summary.get("total_logins", 0),
+        total_uploads=summary.get("total_uploads", 0),
+        queries_per_day=[
+            DailyCount(date=row["date"], count=row["count"])
+            for row in summary.get("queries_per_day", [])
+        ],
+        active_users_per_day=[
+            DailyCount(date=row["date"], count=row["count"])
+            for row in summary.get("active_users_per_day", [])
+        ],
+        avg_response_time=summary.get("avg_response_time"),
+    )

@@ -28,6 +28,13 @@ from app.core.dependencies import get_current_user, require_role
 from app.core.rate_limit import limiter
 from app.models.dictionary import StudyLevel
 from app.models.document import DocumentResponse
+from app.models.responses import (
+    DeleteResponse,
+    DocumentListResponse,
+    DocumentPreviewResponse,
+    DocumentStatsResponse,
+    DocumentsBlock,
+)
 from app.services.database import get_database
 from app.services.document_classifier import classify_document
 from app.services.document_parser import DocumentParser
@@ -371,16 +378,16 @@ async def upload_document(
         )
 
         extractor = get_extractor(doc_type)
-        # The schedule extractor needs raw PDF bytes for its
-        # deterministic per-column parser. We hand them in via a
-        # setter rather than the public ``extract`` signature so other
-        # extractors stay text-only.
-        if hasattr(extractor, "set_file_content"):
-            extractor.set_file_content(file_content)
+        # ``file_content`` is passed per-call rather than via a setter
+        # so the registry-level extractor instance stays stateless and
+        # safe under concurrent uploads. The schedule extractor uses
+        # the raw bytes for its deterministic per-column parser; the
+        # other extractors ignore them.
         result = await extractor.extract(
             text=text,
             filename=file.filename or "",
             document_context=document_context,
+            file_content=file_content,
         )
 
         structured_records = result.records
@@ -550,12 +557,12 @@ async def upload_document(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.get("/list")
+@router.get("/list", response_model=DocumentListResponse)
 async def list_documents(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     current_user: dict[str, Any] = Depends(get_current_user),
-):
+) -> DocumentListResponse:
     """Get list of uploaded documents with pagination, filtered by access control."""
     db = get_database()
     user_role = current_user.get("role", "student")
@@ -601,35 +608,40 @@ async def list_documents(
         },
     ).sort("uploaded_at", -1).skip(skip).limit(limit)
 
-    documents = []
+    documents: list[DocumentResponse] = []
     async for doc in cursor:
         documents.append(
-            {
-                "id": str(doc["_id"]),
-                "filename": doc.get("filename"),
-                "file_type": doc.get("file_type"),
-                "access_level": doc.get("access_level", "public"),
-                "faculty_id": str(doc["faculty_id"]) if doc.get("faculty_id") else None,
-                "target_group_ids": [
+            DocumentResponse(
+                id=str(doc["_id"]),
+                filename=doc.get("filename", ""),
+                file_type=doc.get("file_type", ""),
+                access_level=doc.get("access_level", "public"),
+                faculty_id=(
+                    str(doc["faculty_id"]) if doc.get("faculty_id") else None
+                ),
+                faculty_name=None,
+                target_group_ids=[
                     str(g) for g in doc.get("target_group_ids", []) or []
                 ],
-                "target_years": doc.get("target_years", []) or [],
-                "target_level": doc.get("target_level"),
-                "uploaded_at": doc.get("uploaded_at"),
-                "total_chunks": doc.get("total_chunks", 0),
-            }
+                target_group_names=[],
+                target_years=doc.get("target_years", []) or [],
+                target_level=doc.get("target_level"),
+                uploaded_at=doc.get("uploaded_at"),
+                total_chunks=doc.get("total_chunks", 0),
+                message="",
+            )
         )
 
-    return {"documents": documents, "total": total}
+    return DocumentListResponse(documents=documents, total=total)
 
 
-@router.delete("/{document_id}")
+@router.delete("/{document_id}", response_model=DeleteResponse)
 @limiter.limit("20/minute")
 async def delete_document(
     request: Request,
     document_id: str,
     current_user: dict[str, Any] = Depends(require_role("teacher", "admin")),
-):
+) -> DeleteResponse:
     """Delete a document and its chunks from vector store."""
     db = get_database()
 
@@ -652,10 +664,14 @@ async def delete_document(
 
         filename = doc.get("filename")
 
-        # Delete chunks from vector store (async)
+        # Delete chunks from vector store. Joining on the immutable
+        # document_id (not on filename) means deleting upload A
+        # cannot accidentally remove the chunks of upload B even if
+        # both happen to share a filename — historically that was the
+        # IDOR-style hole here.
         logger.info("Deleting chunks for document: %s", document_id)
-        deleted_count = await vector_store_service.delete_by_metadata(
-            {"source_file": filename}
+        deleted_count = await vector_store_service.delete_by_document_id(
+            document_id
         )
         logger.info("Deleted %d chunks from vector store", deleted_count)
 
@@ -667,11 +683,11 @@ async def delete_document(
 
         logger.info("Document deleted: %s", document_id)
 
-        return {
-            "message": "Document deleted",
-            "filename": filename,
-            "chunks_deleted": deleted_count,
-        }
+        return DeleteResponse(
+            message="Document deleted",
+            filename=filename,
+            chunks_deleted=deleted_count,
+        )
 
     except HTTPException:
         raise
@@ -680,11 +696,13 @@ async def delete_document(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.get("/{document_id}/preview")
+@router.get("/{document_id}/preview", response_model=DocumentPreviewResponse)
+@limiter.limit("30/minute")
 async def preview_document(
+    request: Request,
     document_id: str,
     current_user: dict[str, Any] = Depends(get_current_user),
-):
+) -> DocumentPreviewResponse:
     """Get the extracted text of a document for preview."""
     db = get_database()
 
@@ -719,21 +737,23 @@ async def preview_document(
             detail="Preview not available for this document",
         )
 
-    return {
-        "id": str(doc["_id"]),
-        "filename": doc.get("filename"),
-        "file_type": doc.get("file_type"),
-        "total_chunks": doc.get("total_chunks", 0),
-        "text": extracted_text,
-        "structured_text": doc.get("structured_text"),
-        "structured_records": doc.get("structured_records") or [],
-        "extraction_method": doc.get("extraction_method", "raw"),
-        "structured_records_count": doc.get("structured_records_count", 0),
-    }
+    return DocumentPreviewResponse(
+        id=str(doc["_id"]),
+        filename=doc.get("filename"),
+        file_type=doc.get("file_type"),
+        total_chunks=doc.get("total_chunks", 0),
+        text=extracted_text,
+        structured_text=doc.get("structured_text"),
+        structured_records=doc.get("structured_records") or [],
+        extraction_method=doc.get("extraction_method", "raw"),
+        structured_records_count=doc.get("structured_records_count", 0),
+    )
 
 
-@router.get("/stats")
-async def get_statistics(current_user: dict[str, Any] = Depends(get_current_user)):
+@router.get("/stats", response_model=DocumentStatsResponse)
+async def get_statistics(
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> DocumentStatsResponse:
     """Get statistics about documents and vector store."""
     db = get_database()
 
@@ -742,11 +762,11 @@ async def get_statistics(current_user: dict[str, Any] = Depends(get_current_user
     vector_stats = await vector_store_service.get_stats()
 
     pipeline = [{"$group": {"_id": "$file_type", "count": {"$sum": 1}}}]
-    file_types = {}
+    file_types: dict[str, int] = {}
     async for item in db.documents.aggregate(pipeline):
         file_types[item["_id"]] = item["count"]
 
-    return {
-        "documents": {"total": doc_count, "by_type": file_types},
-        "vector_store": vector_stats,
-    }
+    return DocumentStatsResponse(
+        documents=DocumentsBlock(total=doc_count, by_type=file_types),
+        vector_store=vector_stats,
+    )

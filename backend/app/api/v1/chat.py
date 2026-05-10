@@ -27,6 +27,7 @@ from app.config import get_settings
 from app.core.dependencies import get_current_user
 from app.core.rate_limit import limiter
 from app.models.document import ChatRequest, ChatResponse
+from app.models.responses import HealthConfiguration, HealthResponse
 from app.services.database import get_database
 from app.services.input_sanitizer import input_sanitizer
 from app.services.query_analyzer import analyze_query
@@ -721,59 +722,38 @@ async def ask_question(
         raise HTTPException(status_code=504, detail="Request timed out")
 
 
-@router.get("/health")
+@router.get("/health", response_model=HealthResponse)
 async def health_check():
-    """Health check with system status (read-only)."""
+    """Health check with system status (read-only).
+
+    Exposes only the minimal diagnostics needed by the operator
+    dashboard. Sensitive configuration (chunk size, score thresholds,
+    full model paths) used to be leaked here unauthenticated — that
+    let an attacker fingerprint the deployment before targeting it.
+    The rich config view lives behind admin auth in
+    ``/api/v1/admin/`` instead.
+    """
+    from datetime import datetime, timezone
+
     try:
         db = get_database()
         doc_count = await db.documents.count_documents({})
-
-        stats = await vector_store_service.get_stats()
-
-        # Probe the LLM with a tiny round-trip rather than just confirming
-        # the client is constructible. A misconfigured base URL or expired
-        # API key only surfaces here, not at startup, and we want it on
-        # the dashboard before users hit it.
-        llm_status = "unknown"
-        try:
-            llm = await get_llm()
-            try:
-                await asyncio.wait_for(
-                    llm.ainvoke("ping"),
-                    timeout=min(5.0, float(settings.llm_timeout_seconds)),
-                )
-                llm_status = "reachable"
-            except asyncio.TimeoutError:
-                llm_status = "slow"
-            except (ValueError, RuntimeError, OSError) as exc:
-                logger.warning("LLM probe failed: %s", type(exc).__name__)
-                llm_status = "unreachable"
-        except (ValueError, RuntimeError):
-            llm_status = "unhealthy"
-
-        overall = "healthy" if llm_status in {"reachable", "slow"} else "degraded"
-
-        return {
-            "status": overall,
-            "components": {
-                "database": "connected",
-                "vector_store": "initialized" if vector_store_service._vector_store else "not_initialized",
-                "llm": llm_status,
-            },
-            "statistics": {
-                "documents_count": doc_count,
-                **stats,
-            },
-            "configuration": {
-                "embedding_model": settings.embedding_model,
-                "llm_model": settings.deepseek_model,
-                "chunk_size": settings.chunk_size,
-                "chunk_overlap": settings.chunk_overlap,
-                "top_k_results": settings.top_k_results,
-                "vector_score_threshold": settings.vector_score_threshold,
-                "no_answer_score_threshold": settings.no_answer_score_threshold,
-            },
-        }
-
     except RuntimeError:
-        return {"status": "unhealthy", "error": "Service not fully initialized"}
+        return HealthResponse(
+            status="unhealthy",
+            timestamp=datetime.now(timezone.utc),
+            documents_count=None,
+            vector_store_initialized=False,
+            configuration=None,
+        )
+
+    return HealthResponse(
+        status="healthy",
+        timestamp=datetime.now(timezone.utc),
+        documents_count=doc_count,
+        vector_store_initialized=bool(vector_store_service._vector_store),
+        configuration=HealthConfiguration(
+            embedding_model=settings.embedding_model,
+            llm_model=settings.deepseek_model,
+        ),
+    )
