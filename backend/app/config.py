@@ -21,9 +21,20 @@ class Settings(BaseSettings):
 
     # Security
     secret_key: str
+    # JWT signing algorithm. HS256/HS384/HS512 only — asymmetric algs
+    # (RS*/ES*/PS*) are not used here, and the symbolic value "none"
+    # MUST never be accepted (it would make the server trust unsigned
+    # tokens). The validator below enforces the whitelist; the JWT
+    # decoder additionally pins the same set so a config-poisoning
+    # cannot widen what is accepted at decode time.
     algorithm: str = "HS256"
     access_token_expire_minutes: int = Field(default=30, gt=0, le=1440)
     refresh_token_expire_days: int = Field(default=7, gt=0, le=90)
+    # Issuer / audience claims pinned into every JWT we mint and required
+    # at every decode. Defending against cross-tenant token confusion if
+    # the same SECRET_KEY ever ends up reused in a sibling service.
+    jwt_issuer: str = "raguni"
+    jwt_audience: str = "raguni-api"
 
     # CORS
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
@@ -125,6 +136,23 @@ class Settings(BaseSettings):
         if len(v) < 32:
             raise ValueError(
                 'SECRET_KEY must be at least 32 characters long.'
+            )
+        return v
+
+    @field_validator('algorithm')
+    @classmethod
+    def validate_algorithm(cls, v: str) -> str:
+        """Refuse anything other than HS256/HS384/HS512.
+
+        The literal "none" must never be accepted — it would let an
+        attacker submit an unsigned token and have the server trust it.
+        Asymmetric algs (RS*/ES*/PS*) are not used here either, so the
+        whitelist is intentionally narrow.
+        """
+        allowed = {"HS256", "HS384", "HS512"}
+        if v not in allowed:
+            raise ValueError(
+                f"ALGORITHM must be one of {sorted(allowed)}; got {v!r}"
             )
         return v
 

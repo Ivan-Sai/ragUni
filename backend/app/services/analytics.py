@@ -3,6 +3,8 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
+from pymongo.errors import PyMongoError
+
 from app.services.database import get_database
 
 logger = logging.getLogger(__name__)
@@ -28,7 +30,9 @@ async def track_event(
         )
     except RuntimeError:
         logger.debug("Analytics: database not available, skipping event")
-    except Exception:
+    except PyMongoError:
+        # Mongo went away or rejected the write — analytics is best-effort
+        # so we log and move on rather than blocking the caller.
         logger.warning("Analytics: failed to track event %s", event_type, exc_info=True)
 
 

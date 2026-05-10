@@ -27,6 +27,7 @@ class AuditAction(str, Enum):
     USER_BLOCKED = "user.blocked"
     USER_UNBLOCKED = "user.unblocked"
     USER_ROLE_CHANGED = "user.role_changed"
+    PASSWORD_CHANGED = "user.password_changed"
 
     DOCUMENT_UPLOADED = "document.uploaded"
     DOCUMENT_DELETED = "document.deleted"

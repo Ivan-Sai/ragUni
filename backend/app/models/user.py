@@ -55,20 +55,22 @@ class UserCreate(BaseModel):
             raise ValueError("Password must contain at least one digit")
         return v
 
-    full_name: str = Field(..., min_length=1)
+    # Bounded so a malicious registration cannot smuggle a multi-MB
+    # body through and inflate the users collection / audit metadata.
+    full_name: str = Field(..., min_length=1, max_length=200)
     role: RegistrationRole
 
     # Faculty is mandatory for both roles — it drives access control.
-    faculty_id: str = Field(..., min_length=1)
+    faculty_id: str = Field(..., min_length=1, max_length=64)
 
     # Student-specific (mandatory when role == student).
-    group_id: Optional[str] = None
+    group_id: Optional[str] = Field(None, max_length=64)
     year: Optional[int] = Field(None, ge=1, le=6)
     level: Optional[StudyLevel] = None
 
     # Teacher-specific (free text, not in dictionary).
-    department: Optional[str] = None
-    position: Optional[str] = None
+    department: Optional[str] = Field(None, max_length=200)
+    position: Optional[str] = Field(None, max_length=200)
 
     @model_validator(mode="after")
     def enforce_role_specific_fields(self) -> "UserCreate":
@@ -176,9 +178,9 @@ class ProfileUpdateRequest(BaseModel):
     student stays a verified fact.
     """
 
-    full_name: Optional[str] = Field(None, min_length=1)
-    department: Optional[str] = None
-    position: Optional[str] = None
+    full_name: Optional[str] = Field(None, min_length=1, max_length=200)
+    department: Optional[str] = Field(None, max_length=200)
+    position: Optional[str] = Field(None, max_length=200)
 
 
 class AdminUserUpdateRequest(BaseModel):
@@ -188,13 +190,13 @@ class AdminUserUpdateRequest(BaseModel):
     behalf of the student — there is no self-service path for those.
     """
 
-    full_name: Optional[str] = Field(None, min_length=1)
-    faculty_id: Optional[str] = None
-    group_id: Optional[str] = None
+    full_name: Optional[str] = Field(None, min_length=1, max_length=200)
+    faculty_id: Optional[str] = Field(None, max_length=64)
+    group_id: Optional[str] = Field(None, max_length=64)
     year: Optional[int] = Field(None, ge=1, le=6)
     level: Optional[StudyLevel] = None
-    department: Optional[str] = None
-    position: Optional[str] = None
+    department: Optional[str] = Field(None, max_length=200)
+    position: Optional[str] = Field(None, max_length=200)
 
 
 class UserResponse(BaseModel):

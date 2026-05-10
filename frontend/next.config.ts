@@ -3,17 +3,18 @@ import createNextIntlPlugin from "next-intl/plugin";
 
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
-const isDev = process.env.NODE_ENV === "development";
-
+/**
+ * Static security headers — set on every response including static
+ * assets that bypass middleware. The Content-Security-Policy header
+ * is intentionally NOT set here; it lives in `src/middleware.ts` so
+ * that we can mint a fresh nonce per request and avoid the
+ * `'unsafe-inline'` script directive entirely.
+ */
 const nextConfig: NextConfig = {
   output: "standalone",
   productionBrowserSourceMaps: false,
   poweredByHeader: false,
   async headers() {
-    const scriptSrc = isDev
-      ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-      : "script-src 'self' 'unsafe-inline'";
-
     return [
       {
         source: "/(.*)",
@@ -27,28 +28,12 @@ const nextConfig: NextConfig = {
             value: "DENY",
           },
           {
-            key: "X-XSS-Protection",
-            value: "1; mode=block",
-          },
-          {
             key: "Referrer-Policy",
             value: "strict-origin-when-cross-origin",
           },
           {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=()",
-          },
-          {
-            key: "Content-Security-Policy",
-            value: [
-              "default-src 'self'",
-              scriptSrc,
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: blob:",
-              "font-src 'self' data:",
-              "connect-src 'self' " + (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"),
-              "frame-ancestors 'none'",
-            ].join("; "),
           },
           {
             key: "Strict-Transport-Security",

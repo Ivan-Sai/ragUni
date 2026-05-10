@@ -12,6 +12,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from pymongo.errors import PyMongoError
+
 from app.models.audit import (
     AuditAction,
     AuditLogEntry,
@@ -45,9 +47,11 @@ async def record_action(
             metadata=metadata or {},
         )
         await db[_COLLECTION].insert_one(entry.model_dump())
-    except Exception as exc:  # noqa: BLE001 — deliberate: never block caller
-        # Catching broadly is justified *only here*: audit persistence must
-        # not break business flows. The failure is logged so ops can alert.
+    except (PyMongoError, RuntimeError, ValueError) as exc:
+        # Audit persistence is best-effort: losing a log entry is
+        # strictly better than rolling back an approval that already
+        # happened. We narrow to the exception classes Mongo / DI / model
+        # validation can actually raise instead of catching `Exception`.
         logger.error(
             "Failed to write audit log entry: action=%s resource=%s:%s (%s)",
             action.value,

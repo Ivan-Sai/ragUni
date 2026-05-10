@@ -12,17 +12,88 @@ from __future__ import annotations
 import io
 import logging
 import re
+import struct
+import zipfile
 from zipfile import BadZipFile
 
 import pandas as pd
 import pdfplumber
 from docx import Document as DocxDocument
 
+# pdfplumber wraps pdfminer + a stack of helpers that can surface a
+# wide variety of internal errors on malformed PDFs. We treat them all
+# as "this file is broken" rather than 500ing — but we list the
+# concrete exception classes here instead of catching `Exception` to
+# stay within the project's "no bare except" rule.
+try:
+    from pdfminer.psparser import PSException  # type: ignore[import-not-found]
+    from pdfminer.pdfparser import PDFSyntaxError  # type: ignore[import-not-found]
+    _PDF_PARSE_EXCEPTIONS: tuple[type[BaseException], ...] = (
+        PSException,
+        PDFSyntaxError,
+        struct.error,
+        AttributeError,
+        KeyError,
+        IndexError,
+        ValueError,
+        TypeError,
+        ZeroDivisionError,
+        AssertionError,
+    )
+except ImportError:
+    _PDF_PARSE_EXCEPTIONS = (
+        struct.error,
+        AttributeError,
+        KeyError,
+        IndexError,
+        ValueError,
+        TypeError,
+        ZeroDivisionError,
+        AssertionError,
+    )
+
 logger = logging.getLogger(__name__)
 
 # Maximum page count we will attempt — guards against hostile / huge PDFs
 # without an explicit upload-side check breaking parsing midway.
 _MAX_PDF_PAGES = 500
+
+
+# DOCX/XLSX are zip files. A 10 MB compressed payload can decompress to
+# multiple GB ("zip bomb") and exhaust memory before any of our other
+# guards fire. Caps below are checked against the SUM of decompressed
+# member sizes BEFORE we hand the file to python-docx / openpyxl.
+_MAX_OOXML_TOTAL_DECOMPRESSED: int = 100 * 1024 * 1024  # 100 MB
+_MAX_OOXML_SINGLE_MEMBER: int = 50 * 1024 * 1024  # 50 MB
+
+
+def _check_zip_bomb(file_content: bytes, *, kind: str) -> None:
+    """Refuse OOXML payloads whose members decompress to suspicious sizes.
+
+    Raises ``ValueError`` (mapped to HTTP 400 by the upload endpoint)
+    when the sum of declared decompressed sizes exceeds the total cap
+    or any single member exceeds the per-member cap. The check uses
+    the ZIP central directory — no decompression happens here, so the
+    guard itself cannot be DoSed by malicious input.
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_content)) as zf:
+            total = 0
+            for info in zf.infolist():
+                if info.file_size > _MAX_OOXML_SINGLE_MEMBER:
+                    raise ValueError(
+                        f"{kind} member {info.filename!r} would decompress "
+                        f"to {info.file_size} bytes (limit "
+                        f"{_MAX_OOXML_SINGLE_MEMBER})"
+                    )
+                total += info.file_size
+                if total > _MAX_OOXML_TOTAL_DECOMPRESSED:
+                    raise ValueError(
+                        f"{kind} would decompress to more than "
+                        f"{_MAX_OOXML_TOTAL_DECOMPRESSED} bytes — refusing"
+                    )
+    except BadZipFile as exc:
+        raise ValueError(f"Invalid {kind} file (bad ZIP structure)") from exc
 
 
 class DocumentParser:
@@ -73,10 +144,13 @@ class DocumentParser:
         except (OSError, UnicodeDecodeError) as exc:
             logger.warning("Error reading PDF: %s", type(exc).__name__)
             raise ValueError("Could not read PDF file.") from exc
-        except Exception as exc:  # noqa: BLE001 — pdfplumber wraps many libs
+        except _PDF_PARSE_EXCEPTIONS as exc:
             # pdfplumber can surface a wide menagerie of internal errors
             # (pdfminer.PSEOF, struct.error, ...) on malformed input —
             # treat them all as "this file is broken" rather than 500ing.
+            # The exception list is enumerated at module top so that
+            # MemoryError / KeyboardInterrupt / SystemExit still
+            # propagate normally.
             logger.warning("pdfplumber failed: %s: %s", type(exc).__name__, exc)
             raise ValueError(
                 "Could not parse PDF file. The file may be corrupted or encrypted."
@@ -170,7 +244,7 @@ class DocumentParser:
                 type(exc).__name__,
             )
             return []
-        except Exception as exc:  # noqa: BLE001
+        except _PDF_PARSE_EXCEPTIONS as exc:
             logger.warning(
                 "extract_schedule_cells failed (%s): %s",
                 type(exc).__name__,
@@ -186,7 +260,14 @@ class DocumentParser:
 
     @staticmethod
     async def parse_docx(file_content: bytes) -> str:
-        """Parse DOCX file and extract text + tables."""
+        """Parse DOCX file and extract text + tables.
+
+        Refuses the file before opening it if the ZIP central directory
+        announces decompressed sizes that exceed our caps — defends
+        against zip-bomb DoS where a 10 MB upload would balloon to GB
+        of memory.
+        """
+        _check_zip_bomb(file_content, kind="DOCX")
         try:
             docx_file = io.BytesIO(file_content)
             doc = DocxDocument(docx_file)
@@ -219,10 +300,17 @@ class DocumentParser:
 
     @staticmethod
     async def parse_xlsx(file_content: bytes) -> str:
-        """Parse XLSX file and extract text."""
+        """Parse XLSX file and extract text.
+
+        Same zip-bomb guard as ``parse_docx`` — XLSX is also OOXML and
+        equally vulnerable.
+        """
+        _check_zip_bomb(file_content, kind="XLSX")
         try:
             xlsx_file = io.BytesIO(file_content)
-            excel_file = pd.ExcelFile(xlsx_file)
+            # Pin the engine so we don't silently fall through to xlrd
+            # (which is read-only legacy and has its own quirks).
+            excel_file = pd.ExcelFile(xlsx_file, engine="openpyxl")
 
             text_parts: list[str] = []
             for sheet_name in excel_file.sheet_names:
@@ -424,7 +512,7 @@ def _table_canonical_x_ranges(page) -> list[tuple[float, float]] | None:
     """
     try:
         tables = page.find_tables()
-    except Exception:  # noqa: BLE001 — pdfplumber wraps many libs
+    except _PDF_PARSE_EXCEPTIONS:
         return None
     if not tables:
         return None
@@ -472,7 +560,7 @@ def _remap_table_to_canonical_grid(
 
     try:
         tables = page.find_tables()
-    except Exception:  # noqa: BLE001
+    except _PDF_PARSE_EXCEPTIONS:
         tables = []
     if not tables:
         return _remap_words_to_canonical_grid(page, canonical_ranges)
@@ -492,7 +580,7 @@ def _remap_table_to_canonical_grid(
             use_text_flow=False,
             keep_blank_chars=False,
         )
-    except Exception:  # noqa: BLE001
+    except _PDF_PARSE_EXCEPTIONS:
         page_words = []
 
     def _word_center(w: dict) -> tuple[float, float]:
@@ -586,7 +674,7 @@ def _remap_words_to_canonical_grid(
     """
     try:
         words = page.extract_words(use_text_flow=False, keep_blank_chars=False)
-    except Exception:  # noqa: BLE001
+    except _PDF_PARSE_EXCEPTIONS:
         return None
     if not words:
         return None

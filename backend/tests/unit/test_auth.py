@@ -78,12 +78,16 @@ class TestJWTTokens:
             decode_token("invalid.token.string")
 
     def test_create_refresh_token(self):
-        """create_refresh_token should create a token with type=refresh."""
+        """create_refresh_token should return (token, jti) and the
+        token must decode with type=refresh and matching jti."""
         from app.core.security import create_refresh_token, decode_token
 
-        token = create_refresh_token(data={"sub": "user@knu.ua"})
+        token, jti = create_refresh_token(data={"sub": "user@knu.ua"})
+        assert isinstance(token, str)
+        assert isinstance(jti, str) and len(jti) >= 16
         payload = decode_token(token)
         assert payload["type"] == "refresh"
+        assert payload["jti"] == jti
 
     def test_access_token_has_expiry(self):
         """Access token payload should contain 'exp' claim."""

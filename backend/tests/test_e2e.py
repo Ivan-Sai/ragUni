@@ -64,6 +64,7 @@ def mock_db_collections():
     users = MagicMock()
     users.find_one = AsyncMock(return_value=None)
     users.insert_one = AsyncMock()
+    users.update_one = AsyncMock()
     users.count_documents = AsyncMock(return_value=0)
 
     documents = MagicMock()
@@ -101,6 +102,38 @@ def mock_db_collections():
     mock.feedback = feedback
     mock.faculties = faculties
     mock.groups = groups
+
+    # Some collections are accessed via ``db["name"]`` rather than as
+    # attributes — wire __getitem__ so those calls get an AsyncMock-
+    # backed collection mock with the operations we touch in tests.
+    refresh_tokens = MagicMock()
+    refresh_tokens.insert_one = AsyncMock()
+    refresh_tokens.find_one = AsyncMock(return_value=None)
+    refresh_tokens.update_one = AsyncMock()
+    refresh_tokens.update_many = AsyncMock(return_value=MagicMock(modified_count=0))
+
+    audit_logs = MagicMock()
+    audit_logs.insert_one = AsyncMock()
+    audit_logs.find = MagicMock(return_value=MagicMock())
+    audit_logs.count_documents = AsyncMock(return_value=0)
+
+    def _get_collection(name: str):
+        if name == "refresh_tokens":
+            return refresh_tokens
+        if name == "audit_logs":
+            return audit_logs
+        # Fallback: a generic AsyncMock-backed collection so unknown
+        # access doesn't blow up in test setup.
+        coll = MagicMock()
+        coll.insert_one = AsyncMock()
+        coll.find_one = AsyncMock(return_value=None)
+        coll.update_one = AsyncMock()
+        coll.update_many = AsyncMock(return_value=MagicMock(modified_count=0))
+        coll.delete_one = AsyncMock()
+        coll.delete_many = AsyncMock()
+        return coll
+
+    mock.__getitem__.side_effect = _get_collection
 
     return mock
 
@@ -145,6 +178,13 @@ async def client(e2e_app, mock_db_collections):
     transport = ASGITransport(app=e2e_app)
     original_enabled = limiter.enabled
     limiter.enabled = False
+
+    # New refresh-token / lockout / audit support modules bind the
+    # database at module top — patch each with a fake module that
+    # returns the mocked collections.
+    fake_db_module = MagicMock()
+    fake_db_module.get_database.return_value = mock_db_collections
+
     try:
         with (
             patch("app.api.v1.auth.get_database", return_value=mock_db_collections),
@@ -152,6 +192,9 @@ async def client(e2e_app, mock_db_collections):
             patch("app.api.v1.chat.get_database", return_value=mock_db_collections),
             patch("app.api.v1.chat_history.get_database", return_value=mock_db_collections),
             patch("app.api.v1.documents.get_database", return_value=mock_db_collections),
+            patch("app.services.account_lockout._database", fake_db_module),
+            patch("app.services.refresh_tokens._database", fake_db_module),
+            patch("app.services.audit_log.get_database", return_value=mock_db_collections),
             patch("app.core.dependencies.get_user_by_email", new_callable=AsyncMock) as mock_get_user,
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as ac:

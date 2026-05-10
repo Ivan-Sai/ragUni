@@ -42,6 +42,24 @@ def mock_db():
     # Users collection
     mock.users = MagicMock()
     mock.users.find_one = AsyncMock(return_value=None)
+    mock.users.update_one = AsyncMock()
+    mock.users.insert_one = AsyncMock()
+
+    # Refresh-token allowlist collection (used by /auth/login,
+    # /auth/refresh, /auth/logout, password change/reset).
+    mock_refresh = MagicMock()
+    mock_refresh.insert_one = AsyncMock()
+    mock_refresh.find_one = AsyncMock(return_value=None)
+    mock_refresh.update_one = AsyncMock()
+    mock_refresh.update_many = AsyncMock(return_value=MagicMock(modified_count=0))
+
+    # `db["refresh_tokens"]` should also resolve to the mock — accessing
+    # any unknown collection via __getitem__ returns a MagicMock by
+    # default, but we wire the canonical one explicitly so assertions
+    # against it work.
+    mock.__getitem__.side_effect = lambda name: (
+        mock_refresh if name == "refresh_tokens" else MagicMock()
+    )
 
     with patch("app.services.database.get_database", return_value=mock):
         yield mock

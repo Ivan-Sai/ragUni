@@ -17,6 +17,13 @@ def mock_db():
     Pre-stocks the faculty/group dictionary lookups that the
     register endpoint performs as part of validation, so each test
     only has to drive the user-collection behaviour it cares about.
+
+    The patch list also covers ``account_lockout`` and
+    ``refresh_tokens`` (login + refresh + logout call into both),
+    plus ``audit_log`` so password-change tests don't try to write
+    to a real Mongo. Each support module is patched at its own module
+    binding (``from app.services import database as _database``
+    inside the module) so the substitution actually takes effect.
     """
     mock_users = AsyncMock()
     mock_faculties = AsyncMock()
@@ -37,7 +44,31 @@ def mock_db():
     mock.faculties = mock_faculties
     mock.groups = mock_groups
 
-    with patch("app.api.v1.auth.get_database", return_value=mock):
+    # `db["refresh_tokens"]` — refresh-token allowlist collection.
+    mock_refresh = MagicMock()
+    mock_refresh.insert_one = AsyncMock()
+    mock_refresh.find_one = AsyncMock(return_value=None)
+    mock_refresh.update_one = AsyncMock()
+    mock_refresh.update_many = AsyncMock(return_value=MagicMock(modified_count=0))
+    mock.__getitem__.side_effect = lambda name: (
+        mock_refresh if name == "refresh_tokens" else MagicMock()
+    )
+
+    # The new support services bind `database` at module top with
+    # `from app.services import database as _database`. Patch each
+    # binding so they all see the mock.
+    fake_db_module = MagicMock()
+    fake_db_module.get_database.return_value = mock
+
+    with (
+        patch("app.api.v1.auth.get_database", return_value=mock),
+        patch("app.services.account_lockout._database", fake_db_module),
+        patch("app.services.refresh_tokens._database", fake_db_module),
+        patch(
+            "app.services.audit_log.get_database",
+            return_value=mock,
+        ),
+    ):
         yield mock
 
 
@@ -202,7 +233,9 @@ class TestRefreshToken:
         """Valid refresh token returns new access token."""
         from app.core.security import create_refresh_token
 
-        refresh = create_refresh_token(data={"sub": "student@knu.ua", "role": "student"})
+        refresh, _jti = create_refresh_token(
+            data={"sub": "student@knu.ua", "role": "student"}
+        )
 
         mock_db.users.find_one.return_value = {
             "_id": ObjectId("507f1f77bcf86cd799439011"),
@@ -212,10 +245,15 @@ class TestRefreshToken:
             "is_approved": True,
         }
 
-        response = await client.post(
-            "/api/v1/auth/refresh",
-            json={"refresh_token": refresh},
-        )
+        with patch(
+            "app.api.v1.auth.refresh_tokens.is_active",
+            new_callable=AsyncMock,
+            return_value=True,
+        ):
+            response = await client.post(
+                "/api/v1/auth/refresh",
+                json={"refresh_token": refresh},
+            )
         assert response.status_code == 200
         data = response.json()
         assert "access_token" in data
@@ -238,7 +276,9 @@ class TestRefreshToken:
         """A deactivated user must not be able to refresh their access token."""
         from app.core.security import create_refresh_token
 
-        refresh = create_refresh_token(data={"sub": "blocked@knu.ua", "role": "student"})
+        refresh, _jti = create_refresh_token(
+            data={"sub": "blocked@knu.ua", "role": "student"}
+        )
 
         mock_db.users.find_one.return_value = {
             "_id": ObjectId("507f1f77bcf86cd799439013"),
@@ -248,10 +288,21 @@ class TestRefreshToken:
             "is_approved": True,
         }
 
-        response = await client.post(
-            "/api/v1/auth/refresh",
-            json={"refresh_token": refresh},
-        )
+        with (
+            patch(
+                "app.api.v1.auth.refresh_tokens.is_active",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch(
+                "app.api.v1.auth.refresh_tokens.revoke",
+                new_callable=AsyncMock,
+            ),
+        ):
+            response = await client.post(
+                "/api/v1/auth/refresh",
+                json={"refresh_token": refresh},
+            )
         assert response.status_code == 403
         assert "deactivated" in response.json()["detail"].lower()
 
@@ -260,7 +311,9 @@ class TestRefreshToken:
         """An unapproved teacher must not be able to refresh their access token."""
         from app.core.security import create_refresh_token
 
-        refresh = create_refresh_token(data={"sub": "pending@knu.ua", "role": "teacher"})
+        refresh, _jti = create_refresh_token(
+            data={"sub": "pending@knu.ua", "role": "teacher"}
+        )
 
         mock_db.users.find_one.return_value = {
             "_id": ObjectId("507f1f77bcf86cd799439014"),
@@ -270,10 +323,15 @@ class TestRefreshToken:
             "is_approved": False,
         }
 
-        response = await client.post(
-            "/api/v1/auth/refresh",
-            json={"refresh_token": refresh},
-        )
+        with patch(
+            "app.api.v1.auth.refresh_tokens.is_active",
+            new_callable=AsyncMock,
+            return_value=True,
+        ):
+            response = await client.post(
+                "/api/v1/auth/refresh",
+                json={"refresh_token": refresh},
+            )
         assert response.status_code == 403
         assert "approval" in response.json()["detail"].lower()
 
