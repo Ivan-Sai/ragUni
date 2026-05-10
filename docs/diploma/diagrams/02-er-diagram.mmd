@@ -1,0 +1,106 @@
+%% Рисунок 2.2 — ER-діаграма бази даних
+erDiagram
+    USERS ||--o{ CHAT_HISTORY : "має"
+    USERS ||--o{ REFRESH_TOKENS : "видає"
+    USERS ||--o{ FEEDBACK : "залишає"
+    USERS ||--o{ AUDIT_LOGS : "виконує"
+    USERS }|--|| FACULTIES : "належить до"
+    USERS }o--o| GROUPS : "член (для студентів)"
+    GROUPS }|--|| FACULTIES : "відноситься до"
+    DOCUMENTS }|--|| FACULTIES : "scoped to"
+    DOCUMENTS ||--|{ DOCUMENT_CHUNKS : "розбивається на"
+    DOCUMENTS }o--o{ GROUPS : "target audience"
+    USERS ||--o{ DOCUMENTS : "uploaded by"
+
+    USERS {
+        ObjectId _id PK
+        string email UK
+        string hashed_password
+        string role "student|teacher|admin"
+        ObjectId faculty_id FK
+        ObjectId group_id FK
+        int year
+        string level
+        bool is_approved
+        bool is_active
+        int failed_login_attempts
+        datetime locked_until
+        string password_reset_token_hash
+    }
+
+    FACULTIES {
+        ObjectId _id PK
+        string name UK
+        string name_lower UK
+    }
+
+    GROUPS {
+        ObjectId _id PK
+        string name
+        ObjectId faculty_id FK
+        string level
+    }
+
+    DOCUMENTS {
+        ObjectId _id PK
+        string filename
+        string file_type
+        string access_level
+        ObjectId faculty_id FK
+        array target_group_ids
+        array target_years
+        string target_level
+        string doc_type
+        text extracted_text
+        array structured_records
+    }
+
+    DOCUMENT_CHUNKS {
+        ObjectId _id PK
+        text text
+        array embedding "1024 floats"
+        ObjectId document_id FK
+        string source_file
+        string access_level
+        ObjectId faculty_id
+        array target_group_ids
+        array target_years
+        string target_level
+        string group_label
+        int year_label
+        string level_label
+    }
+
+    CHAT_HISTORY {
+        ObjectId _id PK
+        string session_id
+        ObjectId user_id FK
+        array messages
+    }
+
+    REFRESH_TOKENS {
+        ObjectId _id PK
+        string jti UK
+        ObjectId user_id FK
+        string token_hash
+        datetime expires_at
+        bool revoked
+    }
+
+    AUDIT_LOGS {
+        ObjectId _id PK
+        datetime timestamp
+        ObjectId actor_id FK
+        string action
+        string resource_type
+        string resource_id
+        object metadata
+    }
+
+    FEEDBACK {
+        ObjectId _id PK
+        ObjectId user_id FK
+        string session_id
+        int message_index
+        string rating
+    }
