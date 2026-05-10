@@ -92,19 +92,15 @@ class TestSemantic:
 
 
 class TestPlaceholderMarker:
-    """Surface the fact that the dataset still uses TBD placeholders.
+    """Reject any future re-introduction of TBD placeholder chunk IDs.
 
-    Marked ``xfail(strict=False)`` — the test PASSES today (no
-    placeholders detected = green) and FAILS visibly the moment
-    someone re-introduces them. Once the dataset is populated with
-    real chunk IDs from a frozen corpus, this whole class can go.
+    The dataset is populated with real chunk ``_id`` strings (see
+    ``scripts/build_eval_baseline.py``). If a regression / mistake
+    re-adds a placeholder (``TBD_chunk_*``), this test fails loudly
+    so the maintainer knows to refresh the dataset against a real
+    corpus before trusting the retrieval metrics.
     """
 
-    @pytest.mark.xfail(
-        reason="Eval dataset still uses TBD chunk IDs — populate before "
-        "running retrieval regression",
-        strict=False,
-    )
     def test_no_placeholders(self):
         bad: list[str] = []
         for entry in _entries():
