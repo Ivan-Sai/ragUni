@@ -12,6 +12,10 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
+        # Preserve any custom headers the raising endpoint set —
+        # without this, ``Retry-After`` (returned by the account-
+        # lockout 423 response, the 401 WWW-Authenticate challenge,
+        # rate-limit 429s) is silently dropped by the wrapper.
         return JSONResponse(
             status_code=exc.status_code,
             content={
@@ -20,6 +24,7 @@ def register_error_handlers(app: FastAPI) -> None:
                     "status_code": exc.status_code,
                 }
             },
+            headers=exc.headers or None,
         )
 
     @app.exception_handler(RequestValidationError)

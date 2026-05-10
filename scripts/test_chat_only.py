@@ -11,7 +11,7 @@ import httpx
 sys.path.insert(0, r"C:\Users\vania\ragUni\backend")
 from app.core.security import create_access_token  # noqa: E402
 
-BASE = "http://localhost:8001/api/v1"
+BASE = "http://localhost:8000/api/v1"
 STUDENT_EMAIL = "vaniasai05@gmail.com"
 
 
