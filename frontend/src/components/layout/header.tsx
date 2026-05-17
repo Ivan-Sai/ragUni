@@ -25,7 +25,13 @@ export function Header() {
             <Link href="/profile" className="text-sm text-right hover:underline">
               <p className="font-medium">{session.user.name}</p>
               <p className="text-muted-foreground text-xs">
-                {session.user.role}
+                {session.user.role === "student"
+                  ? t("roleStudent")
+                  : session.user.role === "teacher"
+                    ? t("roleTeacher")
+                    : session.user.role === "admin"
+                      ? t("roleAdmin")
+                      : session.user.role}
               </p>
             </Link>
             <Button

@@ -61,7 +61,13 @@ export function PendingTeachers({
                   <p className="text-sm font-medium">
                     {teacher.full_name}
                     <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
-                      {teacher.role}
+                      {teacher.role === "student"
+                        ? t("roleStudent")
+                        : teacher.role === "teacher"
+                          ? t("roleTeacher")
+                          : teacher.role === "admin"
+                            ? t("roleAdmin")
+                            : teacher.role}
                     </span>
                   </p>
                   <p className="text-xs text-muted-foreground">

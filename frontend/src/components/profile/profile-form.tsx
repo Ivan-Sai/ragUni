@@ -114,7 +114,19 @@ export function ProfileForm() {
 
       <div className="space-y-2">
         <Label htmlFor="role">{t("role")}</Label>
-        <Input id="role" value={user?.role || ""} disabled />
+        <Input
+          id="role"
+          value={
+            user?.role === "student"
+              ? t("roleStudent")
+              : user?.role === "teacher"
+                ? t("roleTeacher")
+                : user?.role === "admin"
+                  ? t("roleAdmin")
+                  : user?.role || ""
+          }
+          disabled
+        />
       </div>
 
       <div className="space-y-2">

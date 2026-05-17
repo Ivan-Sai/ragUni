@@ -245,6 +245,11 @@
       "error": "Помилка завантаження",
       "errorDescription": "Помилка завантаження документа",
       "audienceHint": "Оберіть аудиторію документа. Порожні списки груп / курсів означають «для всіх у обраному факультеті».",
+      "accessLevelLabel": "Хто бачить документ",
+      "accessLevelPublic": "Всі (студенти + викладачі)",
+      "accessLevelFaculty": "Користувачі факультету",
+      "accessLevelRestricted": "Тільки викладачі та адміни",
+      "accessLevelHintRestricted": "Цей документ не бачитимуть студенти. Поля «цільові групи / курси» відключено, бо стосуються тільки студентів.",
       "facultyLabel": "Факультет",
       "facultyPlaceholder": "Оберіть факультет",
       "facultyRequired": "Факультет обов'язковий",
@@ -306,7 +311,10 @@
       "rejected": "Користувача відхилено",
       "userBlocked": "Користувача заблоковано",
       "userUnblocked": "Користувача розблоковано",
-      "roleChanged": "Роль змінено"
+      "roleChanged": "Роль змінено",
+      "roleStudent": "Студент",
+      "roleTeacher": "Викладач",
+      "roleAdmin": "Адміністратор"
     },
     "analytics": {
       "title": "Аналітика",
@@ -375,6 +383,9 @@
     "form": {
       "email": "Email",
       "role": "Роль",
+      "roleStudent": "Студент",
+      "roleTeacher": "Викладач",
+      "roleAdmin": "Адміністратор",
       "fullName": "Повне ім'я",
       "faculty": "Факультет",
       "group": "Група",
@@ -406,7 +417,10 @@
     },
     "header": {
       "logout": "Вийти",
-      "login": "Увійти"
+      "login": "Увійти",
+      "roleStudent": "Студент",
+      "roleTeacher": "Викладач",
+      "roleAdmin": "Адміністратор"
     },
     "themeToggle": "Змінити тему"
   },

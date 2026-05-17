@@ -22,6 +22,8 @@ import {
 import { useFaculties, useGroups } from "@/hooks/use-dictionaries";
 import type { DocumentUploadOptions, StudyLevel } from "@/types/api";
 
+type AccessLevel = "public" | "faculty" | "restricted";
+
 interface DocumentUploadProps {
   onUpload: (file: File, options: DocumentUploadOptions) => Promise<void>;
   isUploading: boolean;
@@ -50,9 +52,14 @@ export function DocumentUpload({ onUpload, isUploading }: DocumentUploadProps) {
 
   // Audience targeting — every upload must specify at least the faculty.
   const [facultyId, setFacultyId] = useState<string>("");
+  const [accessLevel, setAccessLevel] = useState<AccessLevel>("public");
   const [targetLevel, setTargetLevel] = useState<StudyLevel | "any">("any");
   const [targetGroupIds, setTargetGroupIds] = useState<string[]>([]);
   const [targetYears, setTargetYears] = useState<number[]>([]);
+
+  // restricted = teachers/admins only. Audience targeting applies to
+  // students, so it is meaningless (and confusing) when restricted.
+  const audienceDisabled = accessLevel === "restricted";
 
   const faculties = useFaculties();
   const groups = useGroups(
@@ -76,12 +83,28 @@ export function DocumentUpload({ onUpload, isUploading }: DocumentUploadProps) {
     master: tDict("level.master"),
     phd: tDict("level.phd"),
   };
+  const accessLevelLabels: Record<string, string> = {
+    public: t("accessLevelPublic"),
+    faculty: t("accessLevelFaculty"),
+    restricted: t("accessLevelRestricted"),
+  };
 
   // Reset role-dependent picks when faculty / level change so a stale
   // group_id or wrong-level option cannot survive a re-pick.
   useEffect(() => {
     setTargetGroupIds([]);
   }, [facultyId, targetLevel]);
+
+  // When switching to restricted (teachers/admins only), audience
+  // targeting becomes meaningless — wipe it so we don't ship stale
+  // student-level metadata with a teacher-only document.
+  useEffect(() => {
+    if (accessLevel === "restricted") {
+      setTargetLevel("any");
+      setTargetGroupIds([]);
+      setTargetYears([]);
+    }
+  }, [accessLevel]);
 
   function validateFile(file: File): boolean {
     const ext = file.name.split(".").pop()?.toLowerCase();
@@ -150,14 +173,16 @@ export function DocumentUpload({ onUpload, isUploading }: DocumentUploadProps) {
     try {
       await onUpload(selectedFile, {
         facultyId,
-        targetGroupIds,
-        targetYears,
-        targetLevel: targetLevel === "any" ? null : targetLevel,
-        accessLevel: "public",
+        targetGroupIds: audienceDisabled ? [] : targetGroupIds,
+        targetYears: audienceDisabled ? [] : targetYears,
+        targetLevel:
+          audienceDisabled || targetLevel === "any" ? null : targetLevel,
+        accessLevel,
       });
       setSelectedFile(null);
       setError(null);
       setFacultyId("");
+      setAccessLevel("public");
       setTargetLevel("any");
       setTargetGroupIds([]);
       setTargetYears([]);
@@ -228,6 +253,37 @@ export function DocumentUpload({ onUpload, isUploading }: DocumentUploadProps) {
         {selectedFile && (
           <>
             <div className="space-y-3 rounded-md border bg-muted/20 p-4">
+              <div className="space-y-2">
+                <Label className="text-xs">{t("accessLevelLabel")}</Label>
+                <Select
+                  value={accessLevel}
+                  onValueChange={(v) =>
+                    setAccessLevel((v ?? "public") as AccessLevel)
+                  }
+                  items={accessLevelLabels}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="public">
+                      {t("accessLevelPublic")}
+                    </SelectItem>
+                    <SelectItem value="faculty">
+                      {t("accessLevelFaculty")}
+                    </SelectItem>
+                    <SelectItem value="restricted">
+                      {t("accessLevelRestricted")}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                {audienceDisabled && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    {t("accessLevelHintRestricted")}
+                  </p>
+                )}
+              </div>
+
               <p className="text-xs text-muted-foreground">{t("audienceHint")}</p>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -260,6 +316,7 @@ export function DocumentUpload({ onUpload, isUploading }: DocumentUploadProps) {
                       setTargetLevel((v ?? "any") as StudyLevel | "any")
                     }
                     items={levelLabels}
+                    disabled={audienceDisabled}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -281,7 +338,11 @@ export function DocumentUpload({ onUpload, isUploading }: DocumentUploadProps) {
                     {t("groupsHint")}
                   </span>
                 </Label>
-                {!facultyId ? (
+                {audienceDisabled ? (
+                  <p className="text-xs text-muted-foreground italic">
+                    {t("accessLevelRestricted")}
+                  </p>
+                ) : !facultyId ? (
                   <p className="text-xs text-muted-foreground">
                     {t("groupsPickFaculty")}
                   </p>
@@ -323,25 +384,31 @@ export function DocumentUpload({ onUpload, isUploading }: DocumentUploadProps) {
                     {t("yearsHint")}
                   </span>
                 </Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {ALL_YEARS.map((year) => {
-                    const active = targetYears.includes(year);
-                    return (
-                      <button
-                        type="button"
-                        key={year}
-                        onClick={() => toggleYear(year)}
-                        className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                          active
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border bg-background hover:bg-muted"
-                        }`}
-                      >
-                        {year}
-                      </button>
-                    );
-                  })}
-                </div>
+                {audienceDisabled ? (
+                  <p className="text-xs text-muted-foreground italic">
+                    {t("accessLevelRestricted")}
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {ALL_YEARS.map((year) => {
+                      const active = targetYears.includes(year);
+                      return (
+                        <button
+                          type="button"
+                          key={year}
+                          onClick={() => toggleYear(year)}
+                          className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                            active
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-border bg-background hover:bg-muted"
+                          }`}
+                        >
+                          {year}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 

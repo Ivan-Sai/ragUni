@@ -245,6 +245,11 @@
       "error": "Upload error",
       "errorDescription": "Error uploading document",
       "audienceHint": "Pick the audience for this document. Empty group / year list means \"for everyone in the chosen faculty\".",
+      "accessLevelLabel": "Who can see this document",
+      "accessLevelPublic": "Everyone (students + teachers)",
+      "accessLevelFaculty": "Faculty members only",
+      "accessLevelRestricted": "Teachers and admins only",
+      "accessLevelHintRestricted": "Students will not see this document. Target groups / years are disabled — they apply only to students.",
       "facultyLabel": "Faculty",
       "facultyPlaceholder": "Select faculty",
       "facultyRequired": "Faculty is required",
@@ -306,7 +311,10 @@
       "rejected": "User rejected",
       "userBlocked": "User blocked",
       "userUnblocked": "User unblocked",
-      "roleChanged": "Role changed"
+      "roleChanged": "Role changed",
+      "roleStudent": "Student",
+      "roleTeacher": "Teacher",
+      "roleAdmin": "Administrator"
     },
     "analytics": {
       "title": "Analytics",
@@ -375,6 +383,9 @@
     "form": {
       "email": "Email",
       "role": "Role",
+      "roleStudent": "Student",
+      "roleTeacher": "Teacher",
+      "roleAdmin": "Administrator",
       "fullName": "Full name",
       "faculty": "Faculty",
       "group": "Group",
@@ -406,7 +417,10 @@
     },
     "header": {
       "logout": "Log out",
-      "login": "Sign in"
+      "login": "Sign in",
+      "roleStudent": "Student",
+      "roleTeacher": "Teacher",
+      "roleAdmin": "Administrator"
     },
     "themeToggle": "Toggle theme"
   },
