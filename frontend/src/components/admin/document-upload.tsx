@@ -106,6 +106,26 @@ export function DocumentUpload({ onUpload, isUploading }: DocumentUploadProps) {
     }
   }, [accessLevel]);
 
+  /**
+   * Human-readable file size with KB/MB scaling. Falls back to "<1 КБ"
+   * for sub-kilobyte files so the badge never renders as "(0 КБ)" —
+   * regression for BUG-19 in MANUAL_TESTING_REPORT.md.
+   */
+  function formatSize(bytes: number): string {
+    if (!bytes || !Number.isFinite(bytes) || bytes < 0) {
+      return `<1 ${tCommon("kb")}`;
+    }
+    if (bytes < 1024) {
+      return `<1 ${tCommon("kb")}`;
+    }
+    if (bytes < 1024 * 1024) {
+      const kb = bytes / 1024;
+      return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} ${tCommon("kb")}`;
+    }
+    const mb = bytes / (1024 * 1024);
+    return `${mb < 10 ? mb.toFixed(2) : mb.toFixed(1)} ${tCommon("mb")}`;
+  }
+
   function validateFile(file: File): boolean {
     const ext = file.name.split(".").pop()?.toLowerCase();
     if (!ext || !ALLOWED_EXTENSIONS.includes(ext)) {
@@ -220,7 +240,7 @@ export function DocumentUpload({ onUpload, isUploading }: DocumentUploadProps) {
               <FileUp className="h-5 w-5 text-muted-foreground" />
               <span className="text-sm font-medium">{selectedFile.name}</span>
               <span className="text-xs text-muted-foreground">
-                ({Math.max(1, Math.round(selectedFile.size / 1024))} {tCommon("kb")})
+                ({formatSize(selectedFile.size)})
               </span>
               <Button
                 variant="ghost"

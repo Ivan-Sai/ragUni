@@ -450,6 +450,7 @@
   "common": {
     "unknownError": "Unknown error",
     "kb": "KB",
+    "mb": "MB",
     "loading": "Loading...",
     "save": "Save",
     "cancel": "Cancel",

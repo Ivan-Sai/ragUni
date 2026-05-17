@@ -102,20 +102,21 @@ Test accounts were created via `scripts/create_admin.py`:
 **Root cause:** Schema migration gap — older documents were stored without `extracted_text`, which the preview endpoint requires.
 **Resolution:** Implemented `scripts/fix_bug17_orphan_documents.py` that removes any documents lacking `extracted_text` together with their orphan chunks. The script supports a safe dry-run mode and an `--apply` mode for actual deletion. Verified on the current corpus: dry-run reports 0 legacy documents and 0 orphan chunks, confirming the issue cannot reproduce. Schema validation in the upload pipeline now guarantees that `extracted_text` is always populated for new documents.
 
-### BUG-18 (Low): Profile Page Password Section Not Scrollable Into View
+### BUG-18 (Low): Profile Page Password Section Not Scrollable Into View — RESOLVED
 
-**Location:** Profile page layout
-**Reproduction:** Navigate to profile page, try to scroll down to the password change section.
-**Observed:** The fixed header takes approximately 50% of the viewport. The content area below does not scroll far enough to reveal the password change form.
-**Impact:** Users cannot access the password change form through normal UI interaction. Requires manual scrolling workaround or viewport manipulation.
+**Status:** Resolved (CSS layout fix).
+**Location:** `frontend/src/app/(dashboard)/layout.tsx`.
+**Original observation:** Navigating to the profile page and scrolling down did not reveal the password change form, because the `<main>` container failed to overflow vertically and the page below the header simply got clipped at the viewport bottom.
+**Root cause:** Classic flexbox-overflow bug — `<main>` had `flex-1 overflow-auto` inside a `min-h-screen` flex column, but without `min-h-0` on the flex child the container refused to shrink below its content size, so the `overflow-auto` rule never activated.
+**Resolution:** Pinned the dashboard root to the viewport (`h-screen overflow-hidden`), added `min-h-0` to the `<main>` element, and switched to `overflow-y-auto` so vertical scrolling is now bound to the main column. The password change form is now reachable on every viewport size, including short laptop screens.
 
-### BUG-19 (Low): Uploaded File Size Shows "0 KB" in Drop Area
+### BUG-19 (Low): Uploaded File Size Shows "0 KB" in Drop Area — RESOLVED
 
-**Location:** Document upload component
-**Reproduction:** Select a file for upload via the drag-and-drop area.
-**Observed:** The file info badge shows "(0 КБ)" regardless of actual file size.
-**Possible cause:** File size not being read from the File object or using a wrong property.
-**Impact:** Cosmetic — users cannot verify the file size before uploading.
+**Status:** Resolved (formatter rewrite).
+**Location:** `frontend/src/components/admin/document-upload.tsx`.
+**Original observation:** Selecting a file for upload via the drag-and-drop area showed the badge "(0 КБ)" regardless of the actual file size.
+**Root cause:** The badge rendered `Math.round(selectedFile.size / 1024)` directly, which collapses to 0 for any sub-kilobyte file. The earlier `Math.max(1, ...)` patch hid the zero but still rendered "1 КБ" for files up to 0.5 KB and never reported MB for large documents.
+**Resolution:** Replaced the inline expression with a `formatSize(bytes)` helper that returns `<1 КБ` for sub-kilobyte files, `N КБ` (with one decimal under 10 КБ) for kilobyte-range files, and `N МБ` (with two decimals under 10 МБ) for megabyte-range files. Added the `common.mb` translation key in both `uk.json` and `en.json`.
 
 ### BUG-20 (Critical/Security): Suspicious Unauthorized Admin Accounts in Database — RESOLVED
 
@@ -144,8 +145,8 @@ The following bugs from the prior code review (BUG_REPORT.md) were confirmed dur
 | BUG-16 | Critical | Functionality | Teacher approval/rejection broken (undefined user ID) | Resolved (code-level fix verified: `_admin_user_to_response` maps `_id` → `id`) |
 | BUG-20 | Critical | Security | Suspicious admin accounts in database | Resolved (3 `hackadmin@evil.com` accounts removed from `users` collection) |
 | BUG-17 | Medium | Functionality | Document preview 404 for old documents | Resolved (legacy docs purged via `scripts/fix_bug17_orphan_documents.py`) |
-| BUG-18 | Low | UI/UX | Password change section not scrollable | New — needs fix |
-| BUG-19 | Low | UI/UX | File size shows "0 KB" | New — needs fix |
+| BUG-18 | Low | UI/UX | Password change section not scrollable | Resolved (added `min-h-0` + `overflow-y-auto` to dashboard `<main>`) |
+| BUG-19 | Low | UI/UX | File size shows "0 KB" | Resolved (new `formatSize()` helper with KB/MB scaling) |
 
 ---
 
@@ -167,9 +168,9 @@ The following bugs from the prior code review (BUG_REPORT.md) were confirmed dur
 
 1. **Immediate (before any deployment):** All Critical issues are resolved — BUG-16 (teacher approval) fixed at code level, BUG-20 (suspicious admin accounts) fixed by removing the offending records.
 
-2. **Short-term:** Fix BUG-18 (scroll layout on profile page) and BUG-19 (file-size shows 0 KB) — both Low severity, affect cosmetics rather than functionality. (BUG-17 already resolved — see section above.)
+2. **Short-term:** No outstanding bugs. All five issues from the audit (BUG-16, BUG-17, BUG-18, BUG-19, BUG-20) are resolved.
 
-3. **Hardening:** Add integration tests for the teacher approval flow to lock in the BUG-16 fix, schedule a periodic audit job that compares the active admin list against an allowlist in `.env`, and run `scripts/fix_bug17_orphan_documents.py --apply` after any future schema migration.
+3. **Hardening:** Add integration tests for the teacher approval flow to lock in the BUG-16 fix, schedule a periodic audit job that compares the active admin list against an allowlist in `.env`, and run `scripts/fix_bug17_orphan_documents.py --apply` after any future schema migration. Consider adding a Playwright visual regression test for the dashboard layout to catch flexbox-overflow regressions like BUG-18 automatically.
 
 ---
 
