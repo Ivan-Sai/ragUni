@@ -32,6 +32,12 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict[str, Any
 
     try:
         payload = decode_token(token)
+        # Pin the token kind. Without this check a refresh token would
+        # authenticate the user against every protected endpoint for its
+        # full TTL — meaning /auth/logout (which only revokes refresh
+        # tokens via the allowlist) would not actually log the user out.
+        if payload.get("type") != "access":
+            raise credentials_exception
         email: str | None = payload.get("sub")
         if email is None:
             raise credentials_exception

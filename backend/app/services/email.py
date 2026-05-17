@@ -30,11 +30,15 @@ async def send_password_reset_email(to_email: str, reset_token: str) -> None:
     reset_url = f"{settings.frontend_url}/reset-password?token={reset_token}"
 
     if not settings.smtp_email or not settings.smtp_password:
+        # NEVER log the reset URL — it contains the raw reset token,
+        # which is a credential. Anyone with log access could take over
+        # any account that requested a reset. In dev, the developer can
+        # read the token directly from the response of the test helper
+        # endpoint or from the database.
         logger.warning(
-            "SMTP not configured — reset link logged instead of sent. "
-            "Set SMTP_EMAIL and SMTP_PASSWORD in .env"
+            "SMTP not configured — password reset email NOT sent for user. "
+            "Set SMTP_EMAIL and SMTP_PASSWORD in .env to enable delivery."
         )
-        logger.info("Password reset link: %s", reset_url)
         return
 
     subject = "Password reset — UniRAG"

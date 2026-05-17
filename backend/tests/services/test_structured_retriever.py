@@ -137,6 +137,20 @@ class TestEntityFilterTemporal:
         analysis = _analysis(day="вівторок")
         assert not _record_matches_entities(record, analysis=analysis)
 
+    def test_friday_with_apostrophe_matches_canonical_record(self):
+        # Regression: ``_normalise`` strips the apostrophe, so the
+        # day-normaliser dict must be keyed on the normalised form.
+        # Previously the dict had ``"п'ятниця"`` as key, but the
+        # lookup applied ``_normalise`` to the input → ``"пятниця"``,
+        # which was NOT in the dict → ``_canonical_day`` returned
+        # ``None`` → no day filter applied → wrong-day records leaked.
+        record = {"day": "п'ятниця", "subject": "Math"}
+        for variant in ["п'ятниця", "П'ятниця", "П’ятниця", "пятница", "friday", "пт"]:
+            analysis = _analysis(day=variant)
+            assert _record_matches_entities(record, analysis=analysis), (
+                f"Friday variant {variant!r} failed to match canonical record"
+            )
+
 
 # ---------------------------------------------------------------------------
 # Entity filter — subject / teacher (fuzzy substring)

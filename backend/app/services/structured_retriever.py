@@ -70,7 +70,14 @@ def _normalise(value: Any) -> str:
     return _NORMALISE_RE.sub("", folded).lower()
 
 
-_DAY_NORMALISERS: dict[str, str] = {
+# Source map: human-readable variants → canonical Ukrainian day name.
+# At import time we re-key this dict through ``_normalise`` so the lookup
+# always works on the same normalised form that ``_canonical_day`` produces.
+# The previous version had ``"п'ятниця"`` as a key, but ``_normalise``
+# strips the apostrophe → ``"пятниця"`` which is NOT in the dict, so all
+# Friday queries with an apostrophe silently fell through to "no day
+# constraint" instead of matching the canonical Friday records.
+_DAY_NORMALISERS_RAW: dict[str, str] = {
     "понеділок": "понеділок", "понедельник": "понеділок", "monday": "понеділок", "пн": "понеділок",
     "вівторок": "вівторок", "вторник": "вівторок", "tuesday": "вівторок", "вт": "вівторок",
     "середа": "середа", "среда": "середа", "wednesday": "середа", "ср": "середа",
@@ -78,6 +85,9 @@ _DAY_NORMALISERS: dict[str, str] = {
     "п'ятниця": "п'ятниця", "пятница": "п'ятниця", "friday": "п'ятниця", "пт": "п'ятниця",
     "субота": "субота", "суббота": "субота", "saturday": "субота", "сб": "субота",
     "неділя": "неділя", "воскресенье": "неділя", "sunday": "неділя", "вс": "неділя",
+}
+_DAY_NORMALISERS: dict[str, str] = {
+    _normalise(k): v for k, v in _DAY_NORMALISERS_RAW.items()
 }
 
 
