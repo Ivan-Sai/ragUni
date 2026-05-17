@@ -51,3 +51,9 @@ secrets/
 
 # Git worktrees
 .claude/worktrees/
+
+# Diploma and presentation artifacts — kept locally, not pushed
+docs/diploma/
+scripts/run_full_pipeline_eval.py
+tmpdeck.json
+*.pptx
